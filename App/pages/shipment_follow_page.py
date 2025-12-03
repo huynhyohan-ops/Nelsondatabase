@@ -281,6 +281,23 @@ def render_follow_shipment_page():
     df_month = load_month_df(month_choice)
     df_month = compute_volume_profit(df_month)
 
+    # 🔐 ÉP KIỂU CHẮC CHẮN CHO CÁC CỘT QUAN TRỌNG (TRÁNH LỖI DATA_EDITOR)
+    for col in ["ETD", "ETA"]:
+        if col in df_month.columns:
+            df_month[col] = pd.to_datetime(df_month[col], errors="coerce")
+
+    numeric_cols = [
+        "Quantity",
+        "Volume",
+        "Selling Rate",
+        "Buying Rate",
+        "Profit",
+        "HDL FEE carrier",
+    ]
+    for col in numeric_cols:
+        if col in df_month.columns:
+            df_month[col] = pd.to_numeric(df_month[col], errors="coerce")
+
     # ---------- Bộ lọc Carrier / Status ----------
     st.markdown("### 📋 Bảng shipment của tháng đã chọn")
 
