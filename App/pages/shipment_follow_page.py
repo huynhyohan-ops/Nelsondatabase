@@ -31,6 +31,7 @@ STATUS_OPTIONS = [
     "Send SI",
     "Hbl Issue",
     "In Transit",
+    "Arrival",
     "Delivered",
     "Cancelled",
 ]
@@ -69,6 +70,7 @@ STATUS_BADGE_STYLE = {
     "Send SI": {"color": "#3b82f6", "emoji": "📤"},
     "Hbl Issue": {"color": "#a855f7", "emoji": "📄"},
     "In Transit": {"color": "#6366f1", "emoji": "🚢"},
+    "Arrival": {"color": "#2dd4bf", "emoji": "🛬"},
     "Delivered": {"color": "#10b981", "emoji": "📦"},
     "Cancelled": {"color": "#ef4444", "emoji": "✖"},
 }
@@ -222,6 +224,82 @@ def find_alerts(df: pd.DataFrame, column_name: str, hours_before: int = 48) -> p
     if not alert_df.empty:
         alert_df[column_name + "_parsed"] = parsed[mask]
     return alert_df
+
+
+def find_eta_alerts(df: pd.DataFrame, days_before: int = 7) -> pd.DataFrame:
+    """Lọc lô có ETA trong vòng `days_before` để nhắc thanh toán/thu tiền."""
+    if "ETA" not in df.columns or df.empty:
+        return pd.DataFrame(columns=df.columns)
+
+    now = datetime.now()
+    horizon = now + timedelta(days=days_before)
+    parsed = pd.to_datetime(df["ETA"], errors="coerce")
+    mask = (parsed.notna()) & (parsed >= now) & (parsed <= horizon)
+
+    eta_df = df[mask].copy()
+    if not eta_df.empty:
+        eta_df["ETA_parsed"] = parsed[mask]
+    return eta_df
+
+
+def filter_by_timeframe(df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
+    """Lọc dataframe theo ETD trong khung thời gian (month/quarter/year)."""
+    if "ETD" not in df.columns or df.empty:
+        return df
+
+    today = datetime.now().date()
+    if timeframe == "This Quarter":
+        quarter = (today.month - 1) // 3 + 1
+        start_month = 3 * (quarter - 1) + 1
+        start_date = date(today.year, start_month, 1)
+        end_month = start_month + 2
+        last_day = (date(today.year, end_month, 1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+        end_date = last_day
+    elif timeframe == "This Year":
+        start_date = date(today.year, 1, 1)
+        end_date = date(today.year, 12, 31)
+    else:
+        start_date = date(today.year, today.month, 1)
+        next_month = start_date + timedelta(days=32)
+        end_date = date(next_month.year, next_month.month, 1) - timedelta(days=1)
+
+    etd_parsed = pd.to_datetime(df["ETD"], errors="coerce").dt.date
+    mask = (etd_parsed.notna()) & (etd_parsed >= start_date) & (etd_parsed <= end_date)
+    return df[mask]
+
+
+def aggregate_kpi_categories(df: pd.DataFrame) -> pd.DataFrame:
+    """Tạo bảng KPI theo nhóm Revenue / Orders / Conversion rate."""
+    if df.empty:
+        return pd.DataFrame(
+            {
+                "Category": ["Revenue", "Orders", "Conversion Rate"],
+                "Value": [0.0, 0, 0.0],
+                "Note": ["", "", ""],
+            }
+        )
+
+    df_numeric = df.copy()
+    df_numeric["Quantity"] = pd.to_numeric(df_numeric.get("Quantity"), errors="coerce").fillna(0)
+    df_numeric["Selling Rate"] = pd.to_numeric(df_numeric.get("Selling Rate"), errors="coerce").fillna(0.0)
+
+    revenue = float((df_numeric["Selling Rate"] * df_numeric["Quantity"]).sum())
+    orders = int(len(df_numeric))
+    status_series = df_numeric.get("Status", pd.Series(dtype=str)).fillna("").str.lower()
+    converted = status_series.isin(["confirmed", "send si", "hbl issue", "in transit", "arrival", "delivered"])
+    conversion_rate = float((converted.sum() / orders) * 100) if orders > 0 else 0.0
+
+    return pd.DataFrame(
+        {
+            "Category": ["Revenue", "Orders", "Conversion Rate"],
+            "Value": [revenue, orders, conversion_rate],
+            "Note": [
+                "Tổng doanh thu (Selling Rate x Quantity)",
+                "Tổng số lô hàng trong khung thời gian",
+                "% lô đã chuyển từ Submit/Keep Space sang trạng thái thực hiện",
+            ],
+        }
+    )
 
 
 def render_status_legend():
@@ -475,6 +553,7 @@ def render_follow_shipment_page():
         with c3:
             cont_type = st.selectbox("Container Type", options=CONTAINER_TYPES)
             qty = st.number_input("Quantity", min_value=1, value=1, step=1)
+            bkg_no_quick = st.text_input("BKG NO", placeholder="Tùy chọn")
         with c4:
             status_quick = st.selectbox("Status", options=STATUS_OPTIONS, index=STATUS_OPTIONS.index("Submit"))
             carrier_quick = st.selectbox("Carrier", options=["-- chọn --"] + CARRIER_OPTIONS, index=0)
@@ -482,16 +561,22 @@ def render_follow_shipment_page():
         col_rate1, col_rate2 = st.columns(2)
         with col_rate1:
             selling_quick = st.number_input("Selling Rate (USD/cont)", min_value=0.0, value=0.0, step=10.0)
+            si_date = st.date_input("SI Date", value=etd_default, help="Dùng để cảnh báo SI gần đến hạn")
+            si_time = st.time_input("SI Time", value=datetime.now().time().replace(minute=0, second=0, microsecond=0))
         with col_rate2:
             buying_quick = st.number_input("Buying Rate (USD/cont)", min_value=0.0, value=0.0, step=10.0)
+            cy_date = st.date_input("CY Date", value=etd_default, help="Dùng để cảnh báo CY gần đến hạn")
+            cy_time = st.time_input("CY Time", value=datetime.now().time().replace(minute=0, second=0, microsecond=0))
 
         submitted = st.form_submit_button("Thêm vào bảng", type="primary")
 
         if submitted:
+            si_dt = datetime.combine(si_date, si_time) if si_date else None
+            cy_dt = datetime.combine(cy_date, cy_time) if cy_date else None
             new_row = {
                 "Customer": customer.strip() if customer else None,
                 "Routing": routing.strip() if routing else None,
-                "BKG NO": None,
+                "BKG NO": bkg_no_quick.strip() if bkg_no_quick else None,
                 "HBL NO": None,
                 "ETD": pd.to_datetime(etd_quick),
                 "ETA": pd.to_datetime(eta_quick),
@@ -502,14 +587,14 @@ def render_follow_shipment_page():
                 "Selling Rate": selling_quick,
                 "Buying Rate": buying_quick,
                 "Profit": None,
-                "SI": None,
-                "CY": None,
+                "SI": si_dt,
+                "CY": cy_dt,
                 "Carrier": None if carrier_quick == "-- chọn --" else carrier_quick,
                 "HDL FEE carrier": None,
             }
             df_month = pd.concat([df_month, pd.DataFrame([new_row])], ignore_index=True)
             st.session_state[state_key] = df_month
-            st.success("Đã thêm lô hàng vào bảng nhập liệu, tiếp tục chỉnh sửa nếu cần.")
+            st.success("Đã thêm lô hàng vào bảng nhập liệu, tiếp tục chỉnh sửa nếu cần. SI/CY đã gắn giờ để cảnh báo chuẩn.")
 
     # ============================================================
     # BẢNG SHIPMENT (EDIT TRỰC TIẾP)
@@ -675,18 +760,22 @@ def render_follow_shipment_page():
         st.info("KPI chỉ tính các lô không phải Keep Space / Cancelled. Bật/tắt chế độ nhanh ở trên nếu cần mượt hơn khi nhập.")
 
     # ============================================================
-    # BỘ LỌC HIỂN THỊ & BIỂU ĐỒ TỔNG QUAN (CHỈ CHẠY KHI fast_mode = False)
+    # BỘ LỌC HIỂN THỊ & MERGE CHARTS (CHỈ CHẠY KHI fast_mode = False)
     # ============================================================
 
     if not fast_mode:
         st.markdown("---")
-        st.markdown("### 🔍 Bộ lọc hiển thị & biểu đồ")
+        st.markdown("### 🔍 Bộ lọc hiển thị & Merge Charts + KPI")
 
-        col_f1, col_f2 = st.columns(2)
+        col_f1, col_f2, col_f3 = st.columns(3)
         with col_f1:
             carrier_filter = st.selectbox("Lọc theo Carrier (view/chart)", ["All"] + CARRIER_OPTIONS)
         with col_f2:
             status_filter = st.selectbox("Lọc theo Status (view/chart)", ["All"] + STATUS_OPTIONS)
+        with col_f3:
+            timeframe_filter = st.radio(
+                "Phạm vi thời gian", ["This Month", "This Quarter", "This Year"], horizontal=True
+            )
 
         df_view = df_month.copy()
         if carrier_filter != "All":
@@ -694,15 +783,25 @@ def render_follow_shipment_page():
         if status_filter != "All":
             df_view = df_view[df_view["Status"] == status_filter]
 
-        st.markdown("### 📊 Tổng quan Shipment tháng (theo bộ lọc trên)")
+        df_time = filter_by_timeframe(df_view, timeframe_filter)
 
-        col_status, col_customer, col_week = st.columns(3)
+        st.markdown("### 📊 Merge Charts & Quick KPI View")
+        display_mode = st.radio(
+            "Chọn chế độ hiển thị", ["Merged view", "Individual charts"], horizontal=True
+        )
+        chart_style = st.selectbox(
+            "Kiểu biểu đồ", ["Stacked", "Grouped", "Line overlay"], help="Áp dụng khi gộp nhiều chart"
+        )
+        available_charts = ["Status mix", "Customer performance", "Weekly trend"]
+        selected_charts = st.multiselect(
+            "Chọn chart cần gộp (tick nhiều để xem tổng hợp)", available_charts, default=available_charts
+        )
 
-        # 1. Donut status (kể cả Keep Space / Cancelled)
-        df_status = df_view.copy()
+        status_summary = customer_summary = week_summary = None
+
+        df_status = df_time.copy()
         if not df_status.empty:
             df_status["Status_clean"] = df_status["Status"].fillna("Unknown")
-
             status_summary = (
                 df_status.groupby("Status_clean", dropna=False)
                 .agg(
@@ -713,153 +812,210 @@ def render_follow_shipment_page():
                 .reset_index()
             )
 
-            fig_status = px.pie(
-                status_summary,
-                values="Shipments",
-                names="Status_clean",
-                hole=0.4,
-            )
-            fig_status.update_traces(textposition="inside", textinfo="percent+label")
-            fig_status.update_layout(
-                title="Shipment Status",
-                margin=dict(t=40, b=20, l=0, r=0),
-                showlegend=False,
-            )
-        else:
-            fig_status = None
-            status_summary = None
-
-        # Chuẩn bị df_real_view cho Customer + Week (bỏ Keep Space + Cancelled)
-        if "Status" in df_view.columns:
-            status_clean_view = df_view["Status"].fillna("").astype(str).str.strip()
-            mask_real_view = ~status_clean_view.isin(["Keep Space", "Cancelled"])
-        else:
-            mask_real_view = pd.Series(True, index=df_view.index)
-
-        df_real_view = df_view.loc[mask_real_view].copy()
-
-        # 2. Treemap Customer
-        if not df_real_view.empty:
-            df_real_view["Customer_clean"] = df_real_view["Customer"].fillna("Unknown")
-
-            customer_summary = (
-                df_real_view.groupby("Customer_clean", dropna=False)
-                .agg(
-                    Shipments=("Customer", "count"),
-                    Volume_TEUS=("Volume", "sum"),
-                    Profit_USD=("Profit", "sum"),
-                )
-                .reset_index()
-            )
-
-            fig_customer = px.treemap(
-                customer_summary,
-                path=["Customer_clean"],
-                values="Volume_TEUS",
-                color="Profit_USD",
-                color_continuous_scale="Blues",
-                hover_data={
-                    "Shipments": True,
-                    "Volume_TEUS": ":.1f",
-                    "Profit_USD": ":,.0f",
-                },
-            )
-            fig_customer.update_layout(
-                title="Volume (TEU) & Profit theo Customer",
-                margin=dict(t=40, b=20, l=0, r=0),
-            )
-        else:
-            fig_customer = None
-            customer_summary = None
-
-        # 3. Heatmap theo tuần ISO
-        fig_week = None
-        week_summary = None
-
-        if not df_real_view.empty and "ETD" in df_real_view.columns:
-            df_week = df_real_view.copy()
-            df_week["ETD_parsed"] = pd.to_datetime(df_week["ETD"], errors="coerce")
-            df_week = df_week[df_week["ETD_parsed"].notna()]
-
-            if not df_week.empty:
-                iso_info = df_week["ETD_parsed"].dt.isocalendar()
-                df_week["ISO_Week"] = iso_info.week
-                df_week["ISO_Year"] = iso_info.year
-
-                week_summary = (
-                    df_week.groupby(["ISO_Year", "ISO_Week"])
+        df_cust = df_time.copy()
+        fig_customer = None
+        if not df_cust.empty:
+            df_cust["Status_clean"] = df_cust["Status"].fillna("").str.strip()
+            df_cust = df_cust[~df_cust["Status_clean"].isin(["Keep Space", "Cancelled"])]
+            if not df_cust.empty:
+                customer_summary = (
+                    df_cust.groupby("Customer", dropna=False)
                     .agg(
-                        Shipments=("Customer", "count"),
+                        Shipments=("Routing", "count"),
                         Volume_TEUS=("Volume", "sum"),
                         Profit_USD=("Profit", "sum"),
                     )
                     .reset_index()
-                    .sort_values(["ISO_Year", "ISO_Week"])
                 )
+                customer_summary = customer_summary.sort_values("Volume_TEUS", ascending=False)
 
-                week_summary["WeekLabel"] = (
-                    week_summary["ISO_Year"].astype(str)
-                    + "-W"
-                    + week_summary["ISO_Week"].astype(str).str.zfill(2)
-                )
+        df_week = df_time.copy()
+        fig_week = None
+        if not df_week.empty:
+            df_week["Status_clean"] = df_week["Status"].fillna("").str.strip()
+            df_week = df_week[~df_week["Status_clean"].isin(["Keep Space", "Cancelled"])]
+            if not df_week.empty:
+                df_week = df_week.dropna(subset=["ETD"])
+                if not df_week.empty:
+                    df_week["ETD"] = pd.to_datetime(df_week["ETD"], errors="coerce")
+                    df_week["ISO_Year"] = df_week["ETD"].dt.isocalendar().year
+                    df_week["ISO_Week"] = df_week["ETD"].dt.isocalendar().week
+                    week_summary = (
+                        df_week.groupby(["ISO_Year", "ISO_Week"], dropna=False)
+                        .agg(
+                            Shipments=("Customer", "count"),
+                            Volume_TEUS=("Volume", "sum"),
+                            Profit_USD=("Profit", "sum"),
+                        )
+                        .reset_index()
+                        .sort_values(["ISO_Year", "ISO_Week"])
+                    )
+                    week_summary["WeekLabel"] = (
+                        week_summary["ISO_Year"].astype(str)
+                        + "-W"
+                        + week_summary["ISO_Week"].astype(str).str.zfill(2)
+                    )
 
-                melt_df = week_summary.melt(
-                    id_vars=["WeekLabel"],
-                    value_vars=["Volume_TEUS", "Profit_USD"],
-                    var_name="Metric",
-                    value_name="Value",
-                )
+        combined_frames = []
+        if status_summary is not None and "Status mix" in selected_charts:
+            melted = status_summary.melt(
+                id_vars=["Status_clean"],
+                value_vars=["Shipments", "Volume_TEUS", "Profit_USD"],
+                var_name="Metric",
+                value_name="Value",
+            )
+            melted["View"] = "Status mix"
+            melted["Dimension"] = "Status: " + melted["Status_clean"].astype(str)
+            combined_frames.append(melted[["View", "Dimension", "Metric", "Value"]])
+
+        if customer_summary is not None and "Customer performance" in selected_charts:
+            melted_cust = customer_summary.melt(
+                id_vars=["Customer"],
+                value_vars=["Shipments", "Volume_TEUS", "Profit_USD"],
+                var_name="Metric",
+                value_name="Value",
+            )
+            melted_cust["View"] = "Customer performance"
+            melted_cust["Dimension"] = "Customer: " + melted_cust["Customer"].astype(str)
+            combined_frames.append(melted_cust[["View", "Dimension", "Metric", "Value"]])
+
+        if week_summary is not None and "Weekly trend" in selected_charts:
+            melted_week = week_summary.melt(
+                id_vars=["WeekLabel"],
+                value_vars=["Shipments", "Volume_TEUS", "Profit_USD"],
+                var_name="Metric",
+                value_name="Value",
+            )
+            melted_week["View"] = "Weekly trend"
+            melted_week["Dimension"] = "Week: " + melted_week["WeekLabel"].astype(str)
+            combined_frames.append(melted_week[["View", "Dimension", "Metric", "Value"]])
+
+        combined_df = pd.concat(combined_frames, ignore_index=True) if combined_frames else pd.DataFrame()
+
+        if display_mode == "Merged view":
+            if combined_df.empty:
+                st.info("Chưa có dữ liệu để gộp biểu đồ trong khung thời gian và filter đã chọn.")
+            else:
                 metric_map = {
+                    "Shipments": "Shipments",
                     "Volume_TEUS": "Volume (TEU)",
                     "Profit_USD": "Profit (USD)",
                 }
-                melt_df["Metric"] = melt_df["Metric"].map(metric_map)
+                combined_df["MetricLabel"] = combined_df["Metric"].map(metric_map)
+                if chart_style == "Line overlay":
+                    fig_merge = px.line(
+                        combined_df,
+                        x="Dimension",
+                        y="Value",
+                        color="MetricLabel",
+                        line_dash="View",
+                        markers=True,
+                    )
+                else:
+                    barmode = "stack" if chart_style == "Stacked" else "group"
+                    fig_merge = px.bar(
+                        combined_df,
+                        x="Dimension",
+                        y="Value",
+                        color="MetricLabel",
+                        barmode=barmode,
+                        facet_row="View",
+                        title="Merge Charts & Quick KPI View",
+                    )
+                fig_merge.update_layout(margin=dict(t=40, b=80))
+                fig_merge.update_xaxes(tickangle=-35)
+                st.plotly_chart(fig_merge, use_container_width=True)
+        else:
+            col_status, col_customer, col_week = st.columns(3)
+            with col_status:
+                st.markdown("#### 📦 Shipment Status")
+                if status_summary is not None:
+                    fig_status = px.pie(
+                        status_summary,
+                        values="Shipments",
+                        names="Status_clean",
+                        hole=0.4,
+                    )
+                    fig_status.update_traces(textposition="inside", textinfo="percent+label")
+                    st.plotly_chart(fig_status, use_container_width=True)
+                else:
+                    st.info("Chưa có dữ liệu Status để hiển thị.")
 
-                fig_week = px.density_heatmap(
-                    melt_df,
-                    x="WeekLabel",
-                    y="Metric",
-                    z="Value",
-                    color_continuous_scale="Viridis",
-                    labels={"WeekLabel": "ISO Week", "Metric": "", "Value": ""},
-                )
-                fig_week.update_layout(
-                    title="Volume (TEU) & Profit theo tuần ISO",
-                    margin=dict(t=40, b=40, l=0, r=0),
-                )
+            with col_customer:
+                st.markdown("#### 📈 Volume & Profit theo Customer")
+                if customer_summary is not None:
+                    melted_cust = customer_summary.melt(
+                        id_vars=["Customer"],
+                        value_vars=["Volume_TEUS", "Profit_USD"],
+                        var_name="Metric",
+                        value_name="Value",
+                    )
+                    metric_map = {
+                        "Volume_TEUS": "Volume (TEU)",
+                        "Profit_USD": "Profit (USD)",
+                    }
+                    melted_cust["Metric"] = melted_cust["Metric"].map(metric_map)
+                    fig_customer = px.bar(
+                        melted_cust,
+                        x="Customer",
+                        y="Value",
+                        color="Metric",
+                        barmode="group",
+                    )
+                    fig_customer.update_layout(xaxis_tickangle=-35, margin=dict(t=40, b=40, l=0, r=0))
+                    st.plotly_chart(fig_customer, use_container_width=True)
+                else:
+                    st.info("Không có dữ liệu Customer sau khi lọc.")
 
-        # Vẽ 3 chart
-        with col_status:
-            st.markdown("#### 📦 Shipment Status")
-            if fig_status is not None:
-                st.plotly_chart(fig_status, use_container_width=True)
-            else:
-                st.info("Chưa có dữ liệu Status để hiển thị.")
+            with col_week:
+                st.markdown("#### 📅 Volume & Profit theo tuần ISO")
+                if week_summary is not None:
+                    melt_df = week_summary.melt(
+                        id_vars=["WeekLabel"],
+                        value_vars=["Volume_TEUS", "Profit_USD"],
+                        var_name="Metric",
+                        value_name="Value",
+                    )
+                    metric_map = {
+                        "Volume_TEUS": "Volume (TEU)",
+                        "Profit_USD": "Profit (USD)",
+                    }
+                    melt_df["Metric"] = melt_df["Metric"].map(metric_map)
+                    fig_week = px.density_heatmap(
+                        melt_df,
+                        x="WeekLabel",
+                        y="Metric",
+                        z="Value",
+                        color_continuous_scale="Viridis",
+                        labels={"WeekLabel": "ISO Week", "Metric": "", "Value": ""},
+                    )
+                    fig_week.update_layout(title="Volume (TEU) & Profit theo tuần ISO", margin=dict(t=40, b=40, l=0, r=0))
+                    st.plotly_chart(fig_week, use_container_width=True)
+                else:
+                    st.info("Chưa có dữ liệu tuần ISO sau khi lọc.")
 
-        with col_customer:
-            st.markdown("#### 📈 Volume & Profit theo Customer")
-            if fig_customer is not None:
-                st.plotly_chart(fig_customer, use_container_width=True)
-            else:
-                st.info("Không có dữ liệu Customer (sau khi bỏ Keep Space & Cancelled & filter).")
-
-        with col_week:
-            st.markdown("#### 📅 Volume & Profit theo tuần ISO")
-            if fig_week is not None:
-                st.plotly_chart(fig_week, use_container_width=True)
-            else:
-                st.info("Chưa có dữ liệu tuần ISO (sau khi bỏ Keep Space & Cancelled & filter).")
-
-        # Bảng chi tiết
+        st.markdown("#### KPI theo nhóm (Revenue / Orders / Conversion)")
+        kpi_group_df = aggregate_kpi_categories(df_time)
+        kpi_cols = st.columns(3)
+        for idx, (label, value, note) in enumerate(
+            zip(kpi_group_df["Category"], kpi_group_df["Value"], kpi_group_df["Note"])
+        ):
+            with kpi_cols[idx]:
+                if label == "Conversion Rate":
+                    st.metric(label, f"{value:.1f}%", help=note)
+                elif label == "Revenue":
+                    st.metric(label, f"{value:,.0f} USD", help=note)
+                else:
+                    st.metric(label, f"{int(value)}", help=note)
         with st.expander("📋 Xem chi tiết bảng tổng hợp (Status / Customer / Tuần)"):
             if status_summary is not None:
-                st.subheader("Status (theo filter, gồm cả Keep Space & Cancelled)")
+                st.subheader("Status (theo filter & timeframe)")
                 st.dataframe(status_summary, use_container_width=True)
             if customer_summary is not None:
-                st.subheader("Customer (theo filter, bỏ Keep Space & Cancelled)")
+                st.subheader("Customer (theo filter & timeframe)")
                 st.dataframe(customer_summary, use_container_width=True)
             if week_summary is not None:
-                st.subheader("Tuần ISO (theo filter, bỏ Keep Space & Cancelled)")
+                st.subheader("Tuần ISO (theo filter & timeframe)")
                 st.dataframe(week_summary, use_container_width=True)
 
     # ============================================================
@@ -912,3 +1068,61 @@ def render_follow_shipment_page():
                 if c in cy_alerts.columns
             ]
             st.dataframe(cy_alerts[show_cols], use_container_width=True)
+
+    # ETA payment reminder
+    st.markdown("### 🚨 Cảnh báo ETA 7 ngày tới (nhắc thanh toán/thu tiền)")
+    eta_alerts = find_eta_alerts(df_month, days_before=7)
+    if eta_alerts.empty:
+        st.info("Không có lô ETA trong 7 ngày tới.")
+    else:
+        show_cols_eta = [
+            c
+            for c in [
+                "Customer",
+                "Routing",
+                "BKG NO",
+                "Status",
+                "ETA",
+                "ETA_parsed",
+                "Selling Rate",
+                "Quantity",
+                "Profit",
+            ]
+            if c in eta_alerts.columns
+        ]
+        st.warning("Nhắc thu tiền / thanh toán cho các lô sắp đến:")
+        st.dataframe(eta_alerts[show_cols_eta], use_container_width=True)
+
+    # ============================================================
+    # BỘ LỌC BKG + CẬP NHẬT TRẠNG THÁI
+    # ============================================================
+
+    st.markdown("---")
+    st.markdown("### 🧭 Lọc theo BKG & cập nhật trạng thái nhanh")
+    bkg_values = sorted([b for b in df_month.get("BKG NO", pd.Series(dtype=str)).dropna().unique()])
+    col_bkg_filter, col_status_filter = st.columns(2)
+    with col_bkg_filter:
+        selected_bkg = st.selectbox("Chọn BKG cần xử lý", ["-- tất cả --"] + bkg_values)
+    with col_status_filter:
+        current_status_pick = st.selectbox(
+            "Chỉ lấy các lô đang ở trạng thái", ["-- tất cả --"] + STATUS_OPTIONS
+        )
+
+    filtered_bkg_df = df_month.copy()
+    if selected_bkg != "-- tất cả --":
+        filtered_bkg_df = filtered_bkg_df[filtered_bkg_df["BKG NO"] == selected_bkg]
+    if current_status_pick != "-- tất cả --":
+        filtered_bkg_df = filtered_bkg_df[filtered_bkg_df["Status"] == current_status_pick]
+
+    st.dataframe(filtered_bkg_df, use_container_width=True, height=280)
+
+    col_update1, col_update2 = st.columns([1, 2])
+    with col_update1:
+        new_status_value = st.selectbox("Chuyển trạng thái sang", STATUS_OPTIONS, index=STATUS_OPTIONS.index("In Transit"))
+    with col_update2:
+        if st.button("Cập nhật trạng thái các lô đã lọc", type="primary"):
+            df_month.loc[filtered_bkg_df.index, "Status"] = new_status_value
+            st.session_state[state_key] = df_month
+            st.success(
+                f"Đã cập nhật {len(filtered_bkg_df)} dòng sang trạng thái '{new_status_value}'."
+            )
