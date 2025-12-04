@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from contextlib import nullcontext
 from datetime import date, datetime, timedelta
 
 from common.helpers import DATA_DIR  # thư mục Data dùng chung
@@ -337,6 +338,80 @@ def aggregate_kpi_categories(df: pd.DataFrame) -> pd.DataFrame:
             ],
         }
     )
+
+
+def render_filter_state():
+    """Centralize dashboard filter state so all charts/tables stay in sync."""
+
+    default_state = st.session_state.get(
+        "follow_filter_state",
+        {
+            "carrier": "All",
+            "status": "All",
+            "customer_type": "All",
+            "timeframe": "Month",
+            "show_loss": True,
+        },
+    )
+
+    filter_row = st.columns([1.1, 1.1, 1, 1])
+    carrier_options = ["All"] + CARRIER_OPTIONS
+    status_options = ["All"] + STATUS_OPTIONS
+    type_options = ["All"] + CUSTOMER_TYPE_OPTIONS
+
+    with filter_row[0]:
+        carrier = st.selectbox(
+            "Lọc theo Carrier",
+            carrier_options,
+            index=carrier_options.index(default_state.get("carrier", "All")),
+            key="follow_filter_carrier",
+        )
+    with filter_row[1]:
+        customer_type = st.selectbox(
+            "Customer Type",
+            type_options,
+            index=type_options.index(default_state.get("customer_type", "All")),
+            key="follow_filter_customer_type",
+        )
+    with filter_row[2]:
+        timeframe = st.radio(
+            "Phạm vi thời gian",
+            ["Month", "Quarter", "Year"],
+            index=["Month", "Quarter", "Year"].index(default_state.get("timeframe", "Month")),
+            horizontal=True,
+            key="follow_filter_timeframe",
+        )
+    with filter_row[3]:
+        show_loss = st.toggle(
+            "Hiển thị khách loss",
+            value=default_state.get("show_loss", True),
+            help="Bật/tắt bảng khách đã hơn 3 tháng chưa ship.",
+            key="follow_filter_loss",
+        )
+
+    status_row = st.columns([1.1, 1])
+    with status_row[0]:
+        status = st.selectbox(
+            "Trạng thái",
+            status_options,
+            index=status_options.index(default_state.get("status", "All")),
+            key="follow_filter_status",
+        )
+    with status_row[1]:
+        st.caption("Các bộ lọc áp dụng đồng nhất cho biểu đồ, bảng và cảnh báo.")
+
+    filter_state = {
+        "carrier": carrier,
+        "status": status,
+        "customer_type": customer_type,
+        "timeframe": timeframe,
+        "show_loss": show_loss,
+    }
+
+    has_changed = filter_state != default_state
+    st.session_state["follow_filter_state"] = filter_state
+
+    return filter_state, has_changed
 
 
 def render_status_legend():
@@ -876,161 +951,172 @@ def render_follow_shipment_page():
         st.markdown("---")
         st.markdown("### 🔍 Bộ lọc hiển thị & Biểu đồ tổng hợp theo nhóm khách")
 
-        col_f1, col_f2, col_f3 = st.columns(3)
-        with col_f1:
-            carrier_filter = st.selectbox("Lọc theo Carrier (view/chart)", ["All"] + CARRIER_OPTIONS)
-        with col_f2:
-            status_filter = st.selectbox("Lọc theo Status (view/chart)", ["All"] + STATUS_OPTIONS)
-        with col_f3:
-            timeframe_filter = st.radio("Phạm vi thời gian", ["Month", "Quarter", "Year"], horizontal=True)
+        filter_state, filters_changed = render_filter_state()
 
-        df_view = df_month.copy()
-        if carrier_filter != "All":
-            df_view = df_view[df_view["Carrier"] == carrier_filter]
-        if status_filter != "All":
-            df_view = df_view[df_view["Status"] == status_filter]
+        spinner_context = st.spinner("Đang áp dụng bộ lọc và dựng biểu đồ...") if filters_changed else nullcontext()
 
-        df_time = filter_by_timeframe(df_view, timeframe_filter)
+        with spinner_context:
+            df_view = df_month.copy()
+            if filter_state["carrier"] != "All":
+                df_view = df_view[df_view["Carrier"] == filter_state["carrier"]]
+            if filter_state["status"] != "All":
+                df_view = df_view[df_view["Status"] == filter_state["status"]]
+            if filter_state["customer_type"] != "All":
+                df_view = df_view[df_view["Customer Type"] == filter_state["customer_type"]]
 
-        # Load toàn bộ lịch sử để phục vụ Customer Loss
-        df_all = load_all_shipments()
-        if carrier_filter != "All" and not df_all.empty:
-            df_all = df_all[df_all["Carrier"] == carrier_filter]
-        if status_filter != "All" and not df_all.empty:
-            df_all = df_all[df_all["Status"] == status_filter]
-        df_all_time = filter_by_timeframe(df_all, timeframe_filter) if not df_all.empty else df_all
+            df_time = filter_by_timeframe(df_view, filter_state["timeframe"])
 
-        def _clean_real_shipments(df: pd.DataFrame) -> pd.DataFrame:
-            if df.empty:
+            df_all = load_all_shipments()
+            if filter_state["carrier"] != "All" and not df_all.empty:
+                df_all = df_all[df_all["Carrier"] == filter_state["carrier"]]
+            if filter_state["status"] != "All" and not df_all.empty:
+                df_all = df_all[df_all["Status"] == filter_state["status"]]
+            if filter_state["customer_type"] != "All" and not df_all.empty:
+                df_all = df_all[df_all["Customer Type"] == filter_state["customer_type"]]
+            df_all_time = filter_by_timeframe(df_all, filter_state["timeframe"]) if not df_all.empty else df_all
+
+            def _clean_real_shipments(df: pd.DataFrame) -> pd.DataFrame:
+                if df.empty:
+                    return df
+                df = df.copy()
+                df["Status_clean"] = df["Status"].fillna("").astype(str).str.strip()
+                df = df[~df["Status_clean"].isin(["Keep Space", "Cancelled"])]
+                df["Customer Type"] = df["Customer Type"].fillna("Unknown")
                 return df
-            df = df.copy()
-            df["Status_clean"] = df["Status"].fillna("").astype(str).str.strip()
-            df = df[~df["Status_clean"].isin(["Keep Space", "Cancelled"])]
-            df["Customer Type"] = df["Customer Type"].fillna("Unknown")
-            return df
 
-        perf_df = _clean_real_shipments(df_all_time if not df_all.empty else df_time)
-        history_df = _clean_real_shipments(df_all)
+            perf_df = _clean_real_shipments(df_all_time if not df_all.empty else df_time)
+            history_df = _clean_real_shipments(df_all)
 
-        st.markdown("#### 📊 Tổng quan Direct vs Coload (Volume/Profit, Loss, Routing)")
+            st.markdown("#### 📊 Tổng quan Direct vs Coload (Volume/Profit, Loss, Routing)")
 
-        # Volume & Profit theo Customer Type trong khung thời gian chọn
-        volume_profit = pd.DataFrame()
-        if not perf_df.empty:
-            perf_df = perf_df.copy()
-            perf_df["Customer Type"] = perf_df["Customer Type"].replace("", pd.NA).fillna("Unknown")
-            volume_profit = (
-                perf_df.groupby("Customer Type", dropna=False)[["Volume", "Profit"]]
-                .sum()
-                .reset_index()
-            )
+            volume_profit = pd.DataFrame()
+            if not perf_df.empty:
+                perf_df = perf_df.copy()
+                perf_df["Customer Type"] = perf_df["Customer Type"].replace("", pd.NA).fillna("Unknown")
+                volume_profit = (
+                    perf_df.groupby("Customer Type", dropna=False)[["Volume", "Profit"]]
+                    .sum()
+                    .reset_index()
+                )
 
-        # Khách loss 3 tháng gần nhất
-        loss_by_type = pd.DataFrame()
-        loss_detail = pd.DataFrame()
-        if not history_df.empty:
-            history_df = history_df.dropna(subset=["ETD", "Customer"])
-            history_df["ETD"] = pd.to_datetime(history_df["ETD"], errors="coerce")
-            last_ship = history_df.groupby("Customer")["ETD"].max().reset_index()
-            cutoff_date = datetime.now() - timedelta(days=90)
-            loss_detail = last_ship[last_ship["ETD"] < cutoff_date].copy()
-            loss_detail = loss_detail.merge(
-                history_df[["Customer", "Customer Type"]].drop_duplicates(), on="Customer", how="left"
-            )
-            loss_detail["Customer Type"] = loss_detail["Customer Type"].fillna("Unknown")
-            loss_detail["DaysSince"] = (datetime.now() - loss_detail["ETD"]).dt.days
-            if not loss_detail.empty:
-                loss_by_type = (
-                    loss_detail.groupby("Customer Type", dropna=False).agg(
-                        LostCustomers=("Customer", "nunique"),
-                        AvgDaysSince=("DaysSince", "mean"),
+            loss_by_type = pd.DataFrame()
+            loss_detail = pd.DataFrame()
+            if filter_state["show_loss"] and not history_df.empty:
+                history_df = history_df.dropna(subset=["ETD", "Customer"])
+                history_df["ETD"] = pd.to_datetime(history_df["ETD"], errors="coerce")
+                last_ship = history_df.groupby("Customer")["ETD"].max().reset_index()
+                cutoff_date = datetime.now() - timedelta(days=90)
+                loss_detail = last_ship[last_ship["ETD"] < cutoff_date].copy()
+                loss_detail = loss_detail.merge(
+                    history_df[["Customer", "Customer Type"]].drop_duplicates(), on="Customer", how="left"
+                )
+                loss_detail["Customer Type"] = loss_detail["Customer Type"].fillna("Unknown")
+                loss_detail["DaysSince"] = (datetime.now() - loss_detail["ETD"]).dt.days
+                if not loss_detail.empty:
+                    loss_by_type = (
+                        loss_detail.groupby("Customer Type", dropna=False).agg(
+                            LostCustomers=("Customer", "nunique"),
+                            AvgDaysSince=("DaysSince", "mean"),
+                        )
+                    ).reset_index()
+
+            top_routing = pd.DataFrame()
+            if not perf_df.empty:
+                routing_df = perf_df.copy()
+                routing_df["Customer Type"] = routing_df["Customer Type"].fillna("Unknown")
+                routing_counts = (
+                    routing_df.groupby(["Customer Type", "Routing"], dropna=False).size().reset_index(name="Shipments")
+                )
+                top_routing = routing_counts.sort_values("Shipments", ascending=False).groupby("Customer Type").head(1)
+
+            has_no_overview = volume_profit.empty and top_routing.empty and (loss_by_type.empty or not filter_state["show_loss"])
+            if has_no_overview:
+                st.info("Chưa có dữ liệu đủ để vẽ biểu đồ tổng hợp.")
+            else:
+                fig_overview = make_subplots(
+                    rows=1,
+                    cols=3,
+                    subplot_titles=[
+                        "Volume & Profit theo Customer Type",
+                        "Routing phổ biến nhất",
+                        "Customer Loss (≥3 tháng không ship)",
+                    ],
+                    horizontal_spacing=0.08,
+                )
+
+                if not volume_profit.empty:
+                    fig_overview.add_trace(
+                        go.Bar(
+                            x=volume_profit["Customer Type"],
+                            y=volume_profit["Volume"],
+                            name="Volume (TEU)",
+                            marker_color="#2563eb",
+                            text=volume_profit["Volume"],
+                            textposition="outside",
+                        ),
+                        row=1,
+                        col=1,
                     )
-                ).reset_index()
+                    fig_overview.add_trace(
+                        go.Bar(
+                            x=volume_profit["Customer Type"],
+                            y=volume_profit["Profit"],
+                            name="Profit (USD)",
+                            marker_color="#16a34a",
+                            text=volume_profit["Profit"],
+                            textposition="outside",
+                        ),
+                        row=1,
+                        col=1,
+                    )
+                if not top_routing.empty:
+                    fig_overview.add_trace(
+                        go.Bar(
+                            x=top_routing["Customer Type"],
+                            y=top_routing["Shipments"],
+                            name="Routing nổi bật",
+                            marker_color="#f59e0b",
+                            text=top_routing["Routing"],
+                            textposition="outside",
+                        ),
+                        row=1,
+                        col=2,
+                    )
+                if filter_state["show_loss"] and not loss_by_type.empty:
+                    fig_overview.add_trace(
+                        go.Bar(
+                            x=loss_by_type["Customer Type"],
+                            y=loss_by_type["LostCustomers"],
+                            name="Khách loss",
+                            marker_color="#ef4444",
+                            text=loss_by_type["AvgDaysSince"].round(0),
+                            texttemplate="Ngày trung bình: %{text}",
+                        ),
+                        row=1,
+                        col=3,
+                    )
+                fig_overview.update_layout(
+                    barmode="group",
+                    legend_title="Chỉ báo",
+                    margin=dict(t=60, b=40),
+                    hovermode="x unified",
+                    title=f"So sánh Direct vs Coload ({filter_state['timeframe']})",
+                )
+                fig_overview.update_xaxes(tickangle=-25)
 
-        # Tuyến phổ biến nhất theo nhóm trong khung thời gian
-        top_routing = pd.DataFrame()
-        if not perf_df.empty:
-            routing_df = perf_df.copy()
-            routing_df["Customer Type"] = routing_df["Customer Type"].fillna("Unknown")
-            routing_counts = (
-                routing_df.groupby(["Customer Type", "Routing"], dropna=False).size().reset_index(name="Shipments")
-            )
-            top_routing = routing_counts.sort_values("Shipments", ascending=False).groupby("Customer Type").head(1)
-
-        if volume_profit.empty and loss_by_type.empty and top_routing.empty:
-            st.info("Chưa có dữ liệu đủ để vẽ biểu đồ tổng hợp.")
-        else:
-            fig_overview = make_subplots(
-                rows=1,
-                cols=3,
-                subplot_titles=[
-                    "Volume & Profit theo Customer Type",
-                    "Routing phổ biến nhất",
-                    "Customer Loss (≥3 tháng không ship)",
-                ],
-                horizontal_spacing=0.08,
-            )
-
-            if not volume_profit.empty:
-                fig_overview.add_trace(
-                    go.Bar(
-                        x=volume_profit["Customer Type"],
-                        y=volume_profit["Volume"],
-                        name="Volume (TEU)",
-                        marker_color="#2563eb",
-                        text=volume_profit["Volume"],
-                        textposition="outside",
-                    ),
-                    row=1,
-                    col=1,
-                )
-                fig_overview.add_trace(
-                    go.Bar(
-                        x=volume_profit["Customer Type"],
-                        y=volume_profit["Profit"],
-                        name="Profit (USD)",
-                        marker_color="#16a34a",
-                        text=volume_profit["Profit"],
-                        textposition="outside",
-                    ),
-                    row=1,
-                    col=1,
-                )
-            if not top_routing.empty:
-                fig_overview.add_trace(
-                    go.Bar(
-                        x=top_routing["Customer Type"],
-                        y=top_routing["Shipments"],
-                        name="Routing nổi bật",
-                        marker_color="#f59e0b",
-                        text=top_routing["Routing"],
-                        textposition="outside",
-                    ),
-                    row=1,
-                    col=2,
-                )
-            if not loss_by_type.empty:
-                fig_overview.add_trace(
-                    go.Bar(
-                        x=loss_by_type["Customer Type"],
-                        y=loss_by_type["LostCustomers"],
-                        name="Khách loss",
-                        marker_color="#ef4444",
-                        text=loss_by_type["AvgDaysSince"].round(0),
-                        texttemplate="Ngày trung bình: %{text}",
-                    ),
-                    row=1,
-                    col=3,
-                )
-            fig_overview.update_layout(
-                barmode="group",
-                legend_title="Chỉ báo",
-                margin=dict(t=60, b=40),
-                hovermode="x unified",
-                title=f"So sánh Direct vs Coload ({timeframe_filter})",
-            )
-            fig_overview.update_xaxes(tickangle=-25)
-            st.plotly_chart(fig_overview, use_container_width=True)
+                chart_cols = st.columns([1.7, 1])
+                with chart_cols[0]:
+                    st.plotly_chart(fig_overview, use_container_width=True)
+                with chart_cols[1]:
+                    if filter_state["show_loss"] and not loss_detail.empty:
+                        st.subheader("Khách loss (≥3 tháng)")
+                        show_loss_cols = [c for c in ["Customer", "Customer Type", "ETD", "DaysSince"] if c in loss_detail.columns]
+                        st.dataframe(loss_detail[show_loss_cols], use_container_width=True, height=340)
+                    elif not top_routing.empty:
+                        st.subheader("Routing nổi bật từng nhóm")
+                        st.dataframe(top_routing[["Customer Type", "Routing", "Shipments"]], use_container_width=True)
+                    else:
+                        st.caption("Điều chỉnh bộ lọc để xem chi tiết loss/routing.")
 
         st.markdown("#### KPI theo nhóm (Revenue / Orders / Conversion)")
         kpi_group_df = aggregate_kpi_categories(df_time)
