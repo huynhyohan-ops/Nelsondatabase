@@ -1140,64 +1140,83 @@ def render_follow_shipment_page():
                     else:
                         st.caption("Điều chỉnh bộ lọc để xem chi tiết loss/routing.")
 
-            if not routing_detail.empty:
-                st.markdown("#### 🗺️ Routing phổ biến theo Destination")
-                fig_routing = px.bar(
-                    routing_counts,
-                    x="Destination",
-                    y="Shipments",
-                    color="Customer Type",
-                    text="Shipments",
-                    labels={"Destination": "Destination", "Shipments": "Số lô"},
-                    title="Routing phổ biến (đếm theo đích)",
+            st.markdown("#### 📈 Biểu đồ tương tác (Histogram / Pie / Bar)")
+            chart_data = perf_df.copy()
+            if chart_data.empty:
+                st.caption("Điều chỉnh bộ lọc để xem biểu đồ chi tiết.")
+            else:
+                chart_data["Customer Type"] = chart_data["Customer Type"].replace("", pd.NA).fillna("Unknown")
+                chart_data["Customer"] = chart_data["Customer"].replace("", pd.NA).fillna("Unknown")
+
+                control_cols = st.columns([1.1, 1.1, 1.2])
+                with control_cols[0]:
+                    chart_dimension = st.selectbox(
+                        "Nhóm theo",
+                        ["Customer Type", "Customer"],
+                        key="follow_chart_dimension",
+                    )
+                with control_cols[1]:
+                    chart_metric = st.selectbox(
+                        "Chỉ số",
+                        ["Volume", "Profit", "Shipments"],
+                        key="follow_chart_metric",
+                    )
+                with control_cols[2]:
+                    chart_type = st.radio(
+                        "Loại biểu đồ",
+                        ["Histogram", "Pie", "Bar"],
+                        horizontal=True,
+                        key="follow_chart_type",
+                    )
+
+                grouped_chart = (
+                    chart_data.groupby(chart_dimension, dropna=False)
+                    .agg(
+                        Volume=("Volume", "sum"),
+                        Profit=("Profit", "sum"),
+                        Shipments=("Customer", "count"),
+                    )
+                    .reset_index()
                 )
-                fig_routing.update_traces(textposition="outside")
-                fig_routing.update_layout(margin=dict(t=60, b=40))
-                st.plotly_chart(fig_routing, use_container_width=True)
 
-            if not perf_df.empty:
-                trend_df = perf_df.dropna(subset=["ETD"]).copy()
-                trend_df["ETD_date"] = pd.to_datetime(trend_df["ETD"], errors="coerce").dt.date
-                trend_df = trend_df.dropna(subset=["ETD_date"])
-
-                if not trend_df.empty:
-                    trend_cols = st.columns(3)
-                    with trend_cols[0]:
-                        vol_line = px.line(
-                            trend_df,
-                            x="ETD_date",
-                            y="Volume",
-                            color="Customer Type",
-                            markers=True,
-                            title="Đường Volume theo ETD",
-                            labels={"ETD_date": "ETD", "Volume": "TEU"},
-                        )
-                        st.plotly_chart(vol_line, use_container_width=True)
-
-                    with trend_cols[1]:
-                        profit_line = px.line(
-                            trend_df,
-                            x="ETD_date",
-                            y="Profit",
-                            color="Customer Type",
-                            markers=True,
-                            title="Đường Profit theo ETD",
-                            labels={"ETD_date": "ETD", "Profit": "USD"},
-                        )
-                        st.plotly_chart(profit_line, use_container_width=True)
-
-                    with trend_cols[2]:
-                        hist_destination = px.histogram(
-                            trend_df,
-                            x="Destination",
-                            color="Customer Type",
-                            title="Histogram Destination",
-                            labels={"Destination": "Đích"},
-                            barmode="group",
-                        )
-                        st.plotly_chart(hist_destination, use_container_width=True)
+                if grouped_chart.empty:
+                    st.caption("Không có dữ liệu sau khi áp dụng bộ lọc để vẽ biểu đồ.")
                 else:
-                    st.caption("Chưa đủ ETD để vẽ đường/histogram xu hướng.")
+                    if chart_type == "Histogram":
+                        fig_detail = px.histogram(
+                            grouped_chart,
+                            x=chart_dimension,
+                            y=chart_metric,
+                            color=chart_dimension if chart_dimension == "Customer Type" else None,
+                            title=f"Histogram {chart_metric} theo {chart_dimension}",
+                            labels={chart_dimension: chart_dimension, chart_metric: chart_metric},
+                        )
+                        fig_detail.update_layout(margin=dict(t=60, b=40))
+                    elif chart_type == "Pie":
+                        fig_detail = px.pie(
+                            grouped_chart,
+                            names=chart_dimension,
+                            values=chart_metric,
+                            title=f"Tỉ trọng {chart_metric} theo {chart_dimension}",
+                        )
+                        fig_detail.update_traces(
+                            textinfo="label+percent",
+                            hovertemplate="%{label}: %{value}<extra></extra>",
+                        )
+                    else:
+                        fig_detail = px.bar(
+                            grouped_chart,
+                            x=chart_dimension,
+                            y=chart_metric,
+                            color=chart_dimension if chart_dimension == "Customer Type" else None,
+                            text=chart_metric,
+                            title=f"Bar chart {chart_metric} theo {chart_dimension}",
+                            labels={chart_dimension: chart_dimension, chart_metric: chart_metric},
+                        )
+                        fig_detail.update_traces(textposition="outside")
+                        fig_detail.update_layout(margin=dict(t=60, b=40))
+
+                    st.plotly_chart(fig_detail, use_container_width=True)
 
         st.markdown("#### KPI theo nhóm (Revenue / Orders / Conversion)")
         kpi_group_df = aggregate_kpi_categories(df_time)
