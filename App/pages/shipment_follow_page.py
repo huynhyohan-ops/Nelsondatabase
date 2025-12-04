@@ -238,6 +238,15 @@ def compute_volume_profit(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def extract_destination(routing_value: str) -> str:
+    """Lấy đích đến từ chuỗi routing (VD: "HPH - DENVER" -> "DENVER")."""
+    if not isinstance(routing_value, str):
+        return ""
+    if "-" in routing_value:
+        return routing_value.split("-")[-1].strip().upper()
+    return routing_value.strip().upper()
+
+
 # ============================================================
 # ALERT SI / CY
 # ============================================================
@@ -346,34 +355,24 @@ def render_filter_state():
     default_state = st.session_state.get(
         "follow_filter_state",
         {
-            "carrier": "All",
-            "status": "All",
             "customer_type": "All",
             "timeframe": "Month",
             "show_loss": True,
+            "customer_query": "",
         },
     )
 
-    filter_row = st.columns([1.1, 1.1, 1, 1])
-    carrier_options = ["All"] + CARRIER_OPTIONS
-    status_options = ["All"] + STATUS_OPTIONS
+    filter_row = st.columns([1.2, 1.2, 1])
     type_options = ["All"] + CUSTOMER_TYPE_OPTIONS
 
     with filter_row[0]:
-        carrier = st.selectbox(
-            "Lọc theo Carrier",
-            carrier_options,
-            index=carrier_options.index(default_state.get("carrier", "All")),
-            key="follow_filter_carrier",
-        )
-    with filter_row[1]:
         customer_type = st.selectbox(
             "Customer Type",
             type_options,
             index=type_options.index(default_state.get("customer_type", "All")),
             key="follow_filter_customer_type",
         )
-    with filter_row[2]:
+    with filter_row[1]:
         timeframe = st.radio(
             "Phạm vi thời gian",
             ["Month", "Quarter", "Year"],
@@ -381,7 +380,7 @@ def render_filter_state():
             horizontal=True,
             key="follow_filter_timeframe",
         )
-    with filter_row[3]:
+    with filter_row[2]:
         show_loss = st.toggle(
             "Hiển thị khách loss",
             value=default_state.get("show_loss", True),
@@ -389,23 +388,22 @@ def render_filter_state():
             key="follow_filter_loss",
         )
 
-    status_row = st.columns([1.1, 1])
-    with status_row[0]:
-        status = st.selectbox(
-            "Trạng thái",
-            status_options,
-            index=status_options.index(default_state.get("status", "All")),
-            key="follow_filter_status",
+    search_row = st.columns([1, 1])
+    with search_row[0]:
+        customer_query = st.text_input(
+            "Lọc theo khách hàng (áp dụng cho biểu đồ/routing)",
+            value=default_state.get("customer_query", ""),
+            placeholder="Nhập tên khách...",
+            key="follow_filter_customer_query",
         )
-    with status_row[1]:
+    with search_row[1]:
         st.caption("Các bộ lọc áp dụng đồng nhất cho biểu đồ, bảng và cảnh báo.")
 
     filter_state = {
-        "carrier": carrier,
-        "status": status,
         "customer_type": customer_type,
         "timeframe": timeframe,
         "show_loss": show_loss,
+        "customer_query": customer_query,
     }
 
     has_changed = filter_state != default_state
@@ -957,22 +955,20 @@ def render_follow_shipment_page():
 
         with spinner_context:
             df_view = df_month.copy()
-            if filter_state["carrier"] != "All":
-                df_view = df_view[df_view["Carrier"] == filter_state["carrier"]]
-            if filter_state["status"] != "All":
-                df_view = df_view[df_view["Status"] == filter_state["status"]]
             if filter_state["customer_type"] != "All":
                 df_view = df_view[df_view["Customer Type"] == filter_state["customer_type"]]
+            if filter_state["customer_query"].strip():
+                query = filter_state["customer_query"].strip().lower()
+                df_view = df_view[df_view["Customer"].fillna("").str.lower().str.contains(query)]
 
             df_time = filter_by_timeframe(df_view, filter_state["timeframe"])
 
             df_all = load_all_shipments()
-            if filter_state["carrier"] != "All" and not df_all.empty:
-                df_all = df_all[df_all["Carrier"] == filter_state["carrier"]]
-            if filter_state["status"] != "All" and not df_all.empty:
-                df_all = df_all[df_all["Status"] == filter_state["status"]]
             if filter_state["customer_type"] != "All" and not df_all.empty:
                 df_all = df_all[df_all["Customer Type"] == filter_state["customer_type"]]
+            if filter_state["customer_query"].strip() and not df_all.empty:
+                query = filter_state["customer_query"].strip().lower()
+                df_all = df_all[df_all["Customer"].fillna("").str.lower().str.contains(query)]
             df_all_time = filter_by_timeframe(df_all, filter_state["timeframe"]) if not df_all.empty else df_all
 
             def _clean_real_shipments(df: pd.DataFrame) -> pd.DataFrame:
@@ -982,6 +978,7 @@ def render_follow_shipment_page():
                 df["Status_clean"] = df["Status"].fillna("").astype(str).str.strip()
                 df = df[~df["Status_clean"].isin(["Keep Space", "Cancelled"])]
                 df["Customer Type"] = df["Customer Type"].fillna("Unknown")
+                df["Destination"] = df["Routing"].apply(extract_destination)
                 return df
 
             perf_df = _clean_real_shipments(df_all_time if not df_all.empty else df_time)
@@ -1020,14 +1017,39 @@ def render_follow_shipment_page():
                         )
                     ).reset_index()
 
+            routing_detail = pd.DataFrame()
+            routing_counts = pd.DataFrame()
             top_routing = pd.DataFrame()
             if not perf_df.empty:
-                routing_df = perf_df.copy()
-                routing_df["Customer Type"] = routing_df["Customer Type"].fillna("Unknown")
+                routing_detail = perf_df.copy()
+                routing_detail = routing_detail[routing_detail["Destination"].astype(str).str.len() > 0]
+
+                routing_filter_cols = st.columns([1, 1.4])
+                dest_options = ["All"] + sorted(routing_detail["Destination"].dropna().unique().tolist())
+                default_dest = st.session_state.get("follow_routing_destination", "All")
+                if default_dest not in dest_options:
+                    default_dest = "All"
+                with routing_filter_cols[0]:
+                    selected_destination = st.selectbox(
+                        "Destination (tách tự động từ Routing)",
+                        dest_options,
+                        index=dest_options.index(default_dest) if default_dest in dest_options else 0,
+                        key="follow_routing_destination",
+                        help="Ví dụ Routing 'HPH - DENVER' sẽ được đếm ở Destination = DENVER.",
+                    )
+                with routing_filter_cols[1]:
+                    st.caption("Sử dụng ô tìm kiếm khách và Customer Type để lọc routing theo khách/Direct-Coload.")
+
+                if selected_destination != "All":
+                    routing_detail = routing_detail[routing_detail["Destination"] == selected_destination]
+
                 routing_counts = (
-                    routing_df.groupby(["Customer Type", "Routing"], dropna=False).size().reset_index(name="Shipments")
+                    routing_detail.groupby(["Customer Type", "Destination"], dropna=False).size().reset_index(name="Shipments")
+                    if not routing_detail.empty
+                    else pd.DataFrame()
                 )
-                top_routing = routing_counts.sort_values("Shipments", ascending=False).groupby("Customer Type").head(1)
+                if not routing_counts.empty:
+                    top_routing = routing_counts.sort_values("Shipments", ascending=False).groupby("Customer Type").head(1)
 
             has_no_overview = volume_profit.empty and top_routing.empty and (loss_by_type.empty or not filter_state["show_loss"])
             if has_no_overview:
@@ -1076,7 +1098,7 @@ def render_follow_shipment_page():
                             y=top_routing["Shipments"],
                             name="Routing nổi bật",
                             marker_color="#f59e0b",
-                            text=top_routing["Routing"],
+                            text=top_routing["Destination"],
                             textposition="outside",
                         ),
                         row=1,
@@ -1114,9 +1136,68 @@ def render_follow_shipment_page():
                         st.dataframe(loss_detail[show_loss_cols], use_container_width=True, height=340)
                     elif not top_routing.empty:
                         st.subheader("Routing nổi bật từng nhóm")
-                        st.dataframe(top_routing[["Customer Type", "Routing", "Shipments"]], use_container_width=True)
+                        st.dataframe(top_routing[["Customer Type", "Destination", "Shipments"]], use_container_width=True)
                     else:
                         st.caption("Điều chỉnh bộ lọc để xem chi tiết loss/routing.")
+
+            if not routing_detail.empty:
+                st.markdown("#### 🗺️ Routing phổ biến theo Destination")
+                fig_routing = px.bar(
+                    routing_counts,
+                    x="Destination",
+                    y="Shipments",
+                    color="Customer Type",
+                    text="Shipments",
+                    labels={"Destination": "Destination", "Shipments": "Số lô"},
+                    title="Routing phổ biến (đếm theo đích)",
+                )
+                fig_routing.update_traces(textposition="outside")
+                fig_routing.update_layout(margin=dict(t=60, b=40))
+                st.plotly_chart(fig_routing, use_container_width=True)
+
+            if not perf_df.empty:
+                trend_df = perf_df.dropna(subset=["ETD"]).copy()
+                trend_df["ETD_date"] = pd.to_datetime(trend_df["ETD"], errors="coerce").dt.date
+                trend_df = trend_df.dropna(subset=["ETD_date"])
+
+                if not trend_df.empty:
+                    trend_cols = st.columns(3)
+                    with trend_cols[0]:
+                        vol_line = px.line(
+                            trend_df,
+                            x="ETD_date",
+                            y="Volume",
+                            color="Customer Type",
+                            markers=True,
+                            title="Đường Volume theo ETD",
+                            labels={"ETD_date": "ETD", "Volume": "TEU"},
+                        )
+                        st.plotly_chart(vol_line, use_container_width=True)
+
+                    with trend_cols[1]:
+                        profit_line = px.line(
+                            trend_df,
+                            x="ETD_date",
+                            y="Profit",
+                            color="Customer Type",
+                            markers=True,
+                            title="Đường Profit theo ETD",
+                            labels={"ETD_date": "ETD", "Profit": "USD"},
+                        )
+                        st.plotly_chart(profit_line, use_container_width=True)
+
+                    with trend_cols[2]:
+                        hist_destination = px.histogram(
+                            trend_df,
+                            x="Destination",
+                            color="Customer Type",
+                            title="Histogram Destination",
+                            labels={"Destination": "Đích"},
+                            barmode="group",
+                        )
+                        st.plotly_chart(hist_destination, use_container_width=True)
+                else:
+                    st.caption("Chưa đủ ETD để vẽ đường/histogram xu hướng.")
 
         st.markdown("#### KPI theo nhóm (Revenue / Orders / Conversion)")
         kpi_group_df = aggregate_kpi_categories(df_time)
@@ -1149,7 +1230,7 @@ def render_follow_shipment_page():
 
             if not top_routing.empty:
                 st.subheader("Routing phổ biến theo nhóm")
-                st.dataframe(top_routing, use_container_width=True)
+                st.dataframe(top_routing.rename(columns={"Destination": "Routing (đích)"}), use_container_width=True)
 
     # ============================================================
     # CẢNH BÁO SI / CY (NHẸ, CÓ THỂ ĐỂ LUÔN)
