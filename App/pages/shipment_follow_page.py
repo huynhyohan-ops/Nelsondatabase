@@ -947,7 +947,7 @@ def render_follow_shipment_page():
 
     if not fast_mode:
         st.markdown("---")
-        st.markdown("### 🔍 Bộ lọc hiển thị & Biểu đồ tổng hợp theo nhóm khách")
+        st.markdown("### 📊 Direct vs Coload – Tổng quan & biểu đồ tương tác")
 
         filter_state, filters_changed = render_filter_state()
 
@@ -984,6 +984,7 @@ def render_follow_shipment_page():
             perf_df = _clean_real_shipments(df_all_time if not df_all.empty else df_time)
             history_df = _clean_real_shipments(df_all)
 
+            # ---------- TÍNH DỮ LIỆU TỔNG QUAN ----------
             st.markdown("#### 📊 Tổng quan Direct vs Coload (Volume/Profit, Loss, Routing)")
 
             volume_profit = pd.DataFrame()
@@ -1044,7 +1045,9 @@ def render_follow_shipment_page():
                     routing_detail = routing_detail[routing_detail["Destination"] == selected_destination]
 
                 routing_counts = (
-                    routing_detail.groupby(["Customer Type", "Destination"], dropna=False).size().reset_index(name="Shipments")
+                    routing_detail.groupby(["Customer Type", "Destination"], dropna=False)
+                    .size()
+                    .reset_index(name="Shipments")
                     if not routing_detail.empty
                     else pd.DataFrame()
                 )
@@ -1055,6 +1058,7 @@ def render_follow_shipment_page():
             if has_no_overview:
                 st.info("Chưa có dữ liệu đủ để vẽ biểu đồ tổng hợp.")
             else:
+                # ---------- FIG OVERVIEW ----------
                 fig_overview = make_subplots(
                     rows=1,
                     cols=3,
@@ -1126,97 +1130,94 @@ def render_follow_shipment_page():
                 )
                 fig_overview.update_xaxes(tickangle=-25)
 
-                chart_cols = st.columns([1.7, 1])
+                # ---------- COMBINE OVERVIEW + BIỂU ĐỒ TƯƠNG TÁC ----------
+                chart_cols = st.columns([1.4, 1.6])
+
                 with chart_cols[0]:
                     st.plotly_chart(fig_overview, use_container_width=True)
-                with chart_cols[1]:
                     if filter_state["show_loss"] and not loss_detail.empty:
                         st.subheader("Khách loss (≥3 tháng)")
                         show_loss_cols = [c for c in ["Customer", "Customer Type", "ETD", "DaysSince"] if c in loss_detail.columns]
-                        st.dataframe(loss_detail[show_loss_cols], use_container_width=True, height=340)
-                    elif not top_routing.empty:
-                        st.subheader("Routing nổi bật từng nhóm")
-                        st.dataframe(top_routing[["Customer Type", "Destination", "Shipments"]], use_container_width=True)
+                        st.dataframe(loss_detail[show_loss_cols], use_container_width=True, height=260)
+
+                with chart_cols[1]:
+                    st.markdown("#### 📈 Biểu đồ tương tác (Histogram / Pie / Bar)")
+                    chart_data = perf_df.copy()
+                    if chart_data.empty:
+                        st.caption("Điều chỉnh bộ lọc để xem biểu đồ chi tiết.")
                     else:
-                        st.caption("Điều chỉnh bộ lọc để xem chi tiết loss/routing.")
+                        chart_data["Customer Type"] = chart_data["Customer Type"].replace("", pd.NA).fillna("Unknown")
+                        chart_data["Customer"] = chart_data["Customer"].replace("", pd.NA).fillna("Unknown")
 
-            st.markdown("#### 📈 Biểu đồ tương tác (Histogram / Pie / Bar)")
-            chart_data = perf_df.copy()
-            if chart_data.empty:
-                st.caption("Điều chỉnh bộ lọc để xem biểu đồ chi tiết.")
-            else:
-                chart_data["Customer Type"] = chart_data["Customer Type"].replace("", pd.NA).fillna("Unknown")
-                chart_data["Customer"] = chart_data["Customer"].replace("", pd.NA).fillna("Unknown")
+                        control_cols = st.columns([1.1, 1.1, 1.2])
+                        with control_cols[0]:
+                            chart_dimension = st.selectbox(
+                                "Nhóm theo",
+                                ["Customer Type", "Customer"],
+                                key="follow_chart_dimension",
+                            )
+                        with control_cols[1]:
+                            chart_metric = st.selectbox(
+                                "Chỉ số",
+                                ["Volume", "Profit", "Shipments"],
+                                key="follow_chart_metric",
+                            )
+                        with control_cols[2]:
+                            chart_type = st.radio(
+                                "Loại biểu đồ",
+                                ["Histogram", "Pie", "Bar"],
+                                horizontal=True,
+                                key="follow_chart_type",
+                            )
 
-                control_cols = st.columns([1.1, 1.1, 1.2])
-                with control_cols[0]:
-                    chart_dimension = st.selectbox(
-                        "Nhóm theo",
-                        ["Customer Type", "Customer"],
-                        key="follow_chart_dimension",
-                    )
-                with control_cols[1]:
-                    chart_metric = st.selectbox(
-                        "Chỉ số",
-                        ["Volume", "Profit", "Shipments"],
-                        key="follow_chart_metric",
-                    )
-                with control_cols[2]:
-                    chart_type = st.radio(
-                        "Loại biểu đồ",
-                        ["Histogram", "Pie", "Bar"],
-                        horizontal=True,
-                        key="follow_chart_type",
-                    )
-
-                grouped_chart = (
-                    chart_data.groupby(chart_dimension, dropna=False)
-                    .agg(
-                        Volume=("Volume", "sum"),
-                        Profit=("Profit", "sum"),
-                        Shipments=("Customer", "count"),
-                    )
-                    .reset_index()
-                )
-
-                if grouped_chart.empty:
-                    st.caption("Không có dữ liệu sau khi áp dụng bộ lọc để vẽ biểu đồ.")
-                else:
-                    if chart_type == "Histogram":
-                        fig_detail = px.histogram(
-                            grouped_chart,
-                            x=chart_dimension,
-                            y=chart_metric,
-                            color=chart_dimension if chart_dimension == "Customer Type" else None,
-                            title=f"Histogram {chart_metric} theo {chart_dimension}",
-                            labels={chart_dimension: chart_dimension, chart_metric: chart_metric},
+                        grouped_chart = (
+                            chart_data.groupby(chart_dimension, dropna=False)
+                            .agg(
+                                Volume=("Volume", "sum"),
+                                Profit=("Profit", "sum"),
+                                Shipments=("Customer", "count"),
+                            )
+                            .reset_index()
                         )
-                        fig_detail.update_layout(margin=dict(t=60, b=40))
-                    elif chart_type == "Pie":
-                        fig_detail = px.pie(
-                            grouped_chart,
-                            names=chart_dimension,
-                            values=chart_metric,
-                            title=f"Tỉ trọng {chart_metric} theo {chart_dimension}",
-                        )
-                        fig_detail.update_traces(
-                            textinfo="label+percent",
-                            hovertemplate="%{label}: %{value}<extra></extra>",
-                        )
-                    else:
-                        fig_detail = px.bar(
-                            grouped_chart,
-                            x=chart_dimension,
-                            y=chart_metric,
-                            color=chart_dimension if chart_dimension == "Customer Type" else None,
-                            text=chart_metric,
-                            title=f"Bar chart {chart_metric} theo {chart_dimension}",
-                            labels={chart_dimension: chart_dimension, chart_metric: chart_metric},
-                        )
-                        fig_detail.update_traces(textposition="outside")
-                        fig_detail.update_layout(margin=dict(t=60, b=40))
 
-                    st.plotly_chart(fig_detail, use_container_width=True)
+                        if grouped_chart.empty:
+                            st.caption("Không có dữ liệu sau khi áp dụng bộ lọc để vẽ biểu đồ.")
+                        else:
+                            if chart_type == "Histogram":
+                                fig_detail = px.histogram(
+                                    grouped_chart,
+                                    x=chart_dimension,
+                                    y=chart_metric,
+                                    color=chart_dimension if chart_dimension == "Customer Type" else None,
+                                    title=f"Histogram {chart_metric} theo {chart_dimension}",
+                                    labels={chart_dimension: chart_dimension, chart_metric: chart_metric},
+                                )
+                                fig_detail.update_layout(margin=dict(t=60, b=40))
+                            elif chart_type == "Pie":
+                                fig_detail = px.pie(
+                                    grouped_chart,
+                                    names=chart_dimension,
+                                    values=chart_metric,
+                                    title=f"Tỉ trọng {chart_metric} theo {chart_dimension}",
+                                )
+                                fig_detail.update_traces(
+                                    textinfo="label+percent",
+                                    hovertemplate="%{label}: %{value}<extra></extra>",
+                                )
+                            else:
+                                fig_detail = px.bar(
+                                    grouped_chart,
+                                    x=chart_dimension,
+                                    y=chart_metric,
+                                    color=chart_dimension if chart_dimension == "Customer Type" else None,
+                                    text=chart_metric,
+                                    title=f"Bar chart {chart_metric} theo {chart_dimension}",
+                                    labels={chart_dimension: chart_dimension, chart_metric: chart_metric},
+                                )
+                                fig_detail.update_traces(textposition="outside")
+                                fig_detail.update_layout(margin=dict(t=60, b=40))
+
+                            st.plotly_chart(fig_detail, use_container_width=True)
 
         st.markdown("#### KPI theo nhóm (Revenue / Orders / Conversion)")
         kpi_group_df = aggregate_kpi_categories(df_time)
@@ -1325,4 +1326,3 @@ def render_follow_shipment_page():
         ]
         st.warning("Nhắc thu tiền / thanh toán cho các lô sắp đến:")
         st.dataframe(eta_alerts[show_cols_eta], use_container_width=True)
-
