@@ -61,6 +61,18 @@ BASE_COLUMNS = [
 KPI_VOLUME = 80.0      # TEU / month
 KPI_PROFIT = 15500.0   # USD / month
 
+# Màu & icon cho từng trạng thái giúp nhìn nhanh bảng nhiều cột
+STATUS_BADGE_STYLE = {
+    "Submit": {"color": "#0ea5e9", "emoji": "📝"},
+    "Keep Space": {"color": "#fbbf24", "emoji": "⏳"},
+    "Confirmed": {"color": "#22c55e", "emoji": "✅"},
+    "Send SI": {"color": "#3b82f6", "emoji": "📤"},
+    "Hbl Issue": {"color": "#a855f7", "emoji": "📄"},
+    "In Transit": {"color": "#6366f1", "emoji": "🚢"},
+    "Delivered": {"color": "#10b981", "emoji": "📦"},
+    "Cancelled": {"color": "#ef4444", "emoji": "✖"},
+}
+
 
 # ============================================================
 # THÁNG 11/2025 -> 11/2026
@@ -95,6 +107,16 @@ def _empty_month_df() -> pd.DataFrame:
         else:
             data[c] = pd.Series(dtype="object")
     return pd.DataFrame(data)
+
+
+def compute_df_signature(df: pd.DataFrame) -> str:
+    """Tạo chữ ký đơn giản cho dataframe để báo thay đổi (tránh mất dữ liệu)."""
+    try:
+        normalized = df.copy()
+        normalized = normalized.fillna("")
+        return str(pd.util.hash_pandas_object(normalized, index=True).sum())
+    except Exception:
+        return ""
 
 
 def load_month_df(month_key: str) -> pd.DataFrame:
@@ -202,6 +224,27 @@ def find_alerts(df: pd.DataFrame, column_name: str, hours_before: int = 48) -> p
     return alert_df
 
 
+def render_status_legend():
+    """Hiển thị legend màu/icon cho trạng thái để đọc bảng nhanh hơn."""
+    chips = []
+    for status, meta in STATUS_BADGE_STYLE.items():
+        chips.append(
+            f"<div class='status-chip' style='border-color:{meta['color']};color:{meta['color']}'>"
+            f"{meta['emoji']} {status}</div>"
+        )
+
+    st.markdown(
+        """
+        <div class='legend-wrap'>
+            <div class='legend-title'>Status legend</div>
+            <div class='chip-row'>%s</div>
+        </div>
+        """
+        % "".join(chips),
+        unsafe_allow_html=True,
+    )
+
+
 # ============================================================
 # UI CHÍNH
 # ============================================================
@@ -216,6 +259,20 @@ def render_follow_shipment_page():
         "<div class='section-sub'>Quản lý trạng thái các lô hàng theo từng tháng (11/2025 → 11/2026). Mỗi tháng là 1 sheet trong Shipments.xlsx.</div>",
         unsafe_allow_html=True,
     )
+
+    col_head1, col_head2 = st.columns([2, 1])
+    with col_head1:
+        st.markdown(
+            """
+            <div class='ribbon'>
+                <h4>Follow Shipment workspace</h4>
+                <p>Nhập liệu nhanh đa cột, cập nhật KPI tức thì, có cảnh báo thay đổi để tránh mất dữ liệu.</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with col_head2:
+        render_status_legend()
 
     # ---------- CSS cho KPI CARD ----------
     kpi_css = """
@@ -258,6 +315,73 @@ def render_follow_shipment_page():
         border-radius: 999px;
         background: linear-gradient(90deg, #22c55e, #16a34a);
     }
+    .legend-wrap {
+        background: #f8fafc;
+        border: 1px dashed #e5e7eb;
+        border-radius: 12px;
+        padding: 10px 12px;
+    }
+    .legend-title {
+        font-size: 12px;
+        font-weight: 700;
+        color: #475569;
+        margin-bottom: 6px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+    }
+    .chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+    .status-chip {
+        border: 1px solid #e5e7eb;
+        background: #fff;
+        border-radius: 999px;
+        padding: 4px 10px;
+        font-size: 12px;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .ribbon {
+        background: linear-gradient(90deg, #0ea5e9, #6366f1);
+        color: #fff;
+        padding: 12px 14px;
+        border-radius: 12px;
+        box-shadow: 0 10px 24px rgba(99, 102, 241, 0.18);
+    }
+    .ribbon h4 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 700;
+    }
+    .ribbon p {
+        margin: 2px 0 0;
+        font-size: 13px;
+        opacity: 0.9;
+    }
+    .pill { 
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 600;
+        background: rgba(255,255,255,0.18);
+        border: 1px solid rgba(255,255,255,0.35);
+        margin-left: 8px;
+    }
+    .guard {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 12px;
+        border-radius: 12px;
+        border: 1px solid #e5e7eb;
+        background: #f9fafb;
+    }
+    .guard strong { color: #111827; }
     </style>
     """
     st.markdown(kpi_css, unsafe_allow_html=True)
@@ -278,6 +402,7 @@ def render_follow_shipment_page():
 
     # ---------- DÙNG SESSION_STATE GIỮ DATAFRAME THÁNG ----------
     state_key = f"shipment_df_{month_choice}"
+    sig_key = f"shipment_df_sig_{month_choice}"
     if state_key in st.session_state:
         df_month = st.session_state[state_key]
     else:
@@ -304,6 +429,9 @@ def render_follow_shipment_page():
     df_month = compute_volume_profit(df_month)
     st.session_state[state_key] = df_month
 
+    if sig_key not in st.session_state:
+        st.session_state[sig_key] = compute_df_signature(df_month)
+
     # ============================================================
     # CHẾ ĐỘ NHẬP LIỆU NHANH
     # ============================================================
@@ -314,11 +442,81 @@ def render_follow_shipment_page():
         help="Bật khi anh cần paste / chỉnh sửa nhiều ô cho mượt. Khi cần xem biểu đồ chi tiết thì tắt.",
     )
 
+    st.markdown("### 🛠️ Làn nhập liệu nhanh & bảo vệ dữ liệu")
+    guard_col, kpi_hint_col = st.columns([2, 1])
+    with guard_col:
+        st.markdown(
+            """
+            <div class='guard'>
+              <div>🛡️</div>
+              <div><strong>Khóa cấu trúc cột</strong> – tên cột & thứ tự mặc định được giữ nguyên để tránh lỡ tay rename hoặc mất dữ liệu.
+              Dữ liệu chỉnh sửa sẽ hiển thị cảnh báo <em>chưa lưu</em>.</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with kpi_hint_col:
+        st.info(
+            "Tips: nhập đủ ETD/ETA & Status để KPI tháng chạy chính xác; SI/CY tự cảnh báo 48h sắp tới.",
+            icon="💡",
+        )
+
+    with st.form("quick_add_form", clear_on_submit=True):
+        st.markdown("#### ➕ Thêm nhanh một lô hàng (tránh phải cuộn bảng dài)")
+        c1, c2, c3, c4 = st.columns([1.2, 1.2, 1.0, 1.0])
+        with c1:
+            customer = st.text_input("Customer", placeholder="Nhập tên khách")
+            routing = st.text_input("Routing", placeholder="VD: HCM - LAX")
+        with c2:
+            etd_default = date.today() + timedelta(days=7)
+            eta_default = etd_default + timedelta(days=20)
+            etd_quick = st.date_input("ETD", value=etd_default)
+            eta_quick = st.date_input("ETA", value=eta_default)
+        with c3:
+            cont_type = st.selectbox("Container Type", options=CONTAINER_TYPES)
+            qty = st.number_input("Quantity", min_value=1, value=1, step=1)
+        with c4:
+            status_quick = st.selectbox("Status", options=STATUS_OPTIONS, index=STATUS_OPTIONS.index("Submit"))
+            carrier_quick = st.selectbox("Carrier", options=["-- chọn --"] + CARRIER_OPTIONS, index=0)
+
+        col_rate1, col_rate2 = st.columns(2)
+        with col_rate1:
+            selling_quick = st.number_input("Selling Rate (USD/cont)", min_value=0.0, value=0.0, step=10.0)
+        with col_rate2:
+            buying_quick = st.number_input("Buying Rate (USD/cont)", min_value=0.0, value=0.0, step=10.0)
+
+        submitted = st.form_submit_button("Thêm vào bảng", type="primary")
+
+        if submitted:
+            new_row = {
+                "Customer": customer.strip() if customer else None,
+                "Routing": routing.strip() if routing else None,
+                "BKG NO": None,
+                "HBL NO": None,
+                "ETD": pd.to_datetime(etd_quick),
+                "ETA": pd.to_datetime(eta_quick),
+                "Container Type": cont_type,
+                "Quantity": qty,
+                "Volume": None,
+                "Status": status_quick,
+                "Selling Rate": selling_quick,
+                "Buying Rate": buying_quick,
+                "Profit": None,
+                "SI": None,
+                "CY": None,
+                "Carrier": None if carrier_quick == "-- chọn --" else carrier_quick,
+                "HDL FEE carrier": None,
+            }
+            df_month = pd.concat([df_month, pd.DataFrame([new_row])], ignore_index=True)
+            st.session_state[state_key] = df_month
+            st.success("Đã thêm lô hàng vào bảng nhập liệu, tiếp tục chỉnh sửa nếu cần.")
+
     # ============================================================
     # BẢNG SHIPMENT (EDIT TRỰC TIẾP)
     # ============================================================
 
     st.markdown("### 📋 Bảng shipment của tháng đã chọn")
+    st.caption("Cột cố định, không reorder/rename để tránh sai cấu trúc. Tăng tốc nhập bằng double click/paste multi-cell.")
 
     column_config = {
         "ETD": st.column_config.DateColumn(
@@ -340,7 +538,7 @@ def render_follow_shipment_page():
         ),
         "Carrier": st.column_config.SelectboxColumn(
             "Carrier",
-            options=CARRIER_OPTIONS,
+            options=["--"] + CARRIER_OPTIONS,
         ),
         "Quantity": st.column_config.NumberColumn(
             "Quantity",
@@ -374,18 +572,35 @@ def render_follow_shipment_page():
         ),
     }
 
+    extra_columns = [c for c in df_month.columns if c not in BASE_COLUMNS]
+    column_order = BASE_COLUMNS + extra_columns
+
     edited = st.data_editor(
         df_month,
         use_container_width=True,
         num_rows="dynamic",
         key=f"shipment_editor_{month_choice}",
         column_config=column_config,
+        column_order=column_order,
+        hide_index=True,
     )
 
     # Tính lại Volume/Profit cho toàn bộ tháng sau khi edit & lưu vào session
     edited = compute_volume_profit(edited)
     st.session_state[state_key] = edited
     df_month = edited
+
+    current_sig = compute_df_signature(df_month)
+    saved_sig = st.session_state.get(sig_key)
+    dirty = saved_sig != current_sig
+
+    if dirty:
+        st.warning(
+            "⚠️ Bảng đã thay đổi nhưng chưa lưu. Nhấn Lưu tháng này để tránh mất dữ liệu khi đổi tháng hoặc reload.",
+            icon="🛟",
+        )
+    else:
+        st.success("✅ Bảng đã đồng bộ với dữ liệu lưu gần nhất.")
 
     # ============================================================
     # KPI MONTH + NÚT LƯU (ĐÃ FIX LOGIC LƯU)
@@ -452,6 +667,7 @@ def render_follow_shipment_page():
             df_to_save = df_to_save[df_to_save.notna().any(axis=1)]
 
             save_month_df(month_choice, df_to_save)
+            st.session_state[sig_key] = compute_df_signature(df_to_save)
             st.success(f"Đã lưu dữ liệu cho tháng {month_choice} vào {SHIPMENT_FILE}")
             st.balloons()
 
