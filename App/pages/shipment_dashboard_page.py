@@ -20,15 +20,25 @@ from pages.shipment_follow_page import (
 def render_dashboard_page():
     """KPI Dashboard cho shipment – tách riêng khỏi trang nhập liệu."""
     st.markdown(
-        "<div class='section-title'>Shipment KPI Dashboard</div>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        "<div class='section-sub'>Tổng quan Direct vs Coload, routing & customer loss. Dùng chung bộ lọc với Follow Shipment.</div>",
+        """
+        <div class='page-hero'>
+            <div class='page-hero__title'>Operations Dashboard</div>
+            <div class='page-hero__desc'>Tracking shipment, volume, và profit across customers. Bố cục mới chỉ thay đổi trình bày, logic và tính toán giữ nguyên.</div>
+            <div class='page-hero__badges'>
+                <span class='badge-pill'>Time Range</span>
+                <span class='badge-pill'>Customer Type</span>
+                <span class='badge-pill'>Metric Focus</span>
+            </div>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 
-    st.markdown("---")
+    st.markdown("<div class='surface-title'>Bộ lọc & phạm vi xem</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='surface-sub'>Giữ nguyên control liên kết với trang Follow Shipment để đảm bảo tính thống nhất dữ liệu.</div>",
+        unsafe_allow_html=True,
+    )
 
     # Đọc toàn bộ Shipments.xlsx
     df_all = load_all_shipments()
@@ -74,6 +84,27 @@ def render_dashboard_page():
             else df_all_filtered
         )
 
+        metric_focus = st.radio(
+            "Metric",
+            ["Shipments", "Volume (TEUs)", "Profit (USD)"],
+            horizontal=True,
+            key="kpi_metric_focus",
+            help="Dùng metric này để hiển thị ở khu vực biểu đồ chính. Logic tính toán giữ nguyên dataset sau filter.",
+        )
+
+        # Quick KPI header sau filter
+        header_cols = st.columns(4)
+        with header_cols[0]:
+            st.metric("Total Shipments", len(df_time))
+        with header_cols[1]:
+            total_teus = df_time["Volume"].sum() if not df_time.empty else 0
+            st.metric("Total TEUs", f"{total_teus:,.0f}")
+        with header_cols[2]:
+            total_profit = df_time["Profit"].sum() if not df_time.empty else 0
+            st.metric("Profit USD", f"{total_profit:,.0f}")
+        with header_cols[3]:
+            st.metric("Timeframe", filter_state["timeframe"])
+
         def _clean_real_shipments(df: pd.DataFrame) -> pd.DataFrame:
             if df.empty:
                 return df
@@ -90,8 +121,113 @@ def render_dashboard_page():
         # history_df: dùng để tính khách loss (≥ 3 tháng không ship)
         history_df = _clean_real_shipments(df_all_filtered)
 
+        # Main visuals (trend + direct vs coload) giữ tone Neo Dark Analytics
+        trend_fig = None
+        compare_fig = None
+
+        metric_column = "Shipments"
+        metric_label = "Shipments"
+        if metric_focus == "Volume (TEUs)":
+            metric_column = "Volume"
+            metric_label = "Volume (TEUs)"
+        elif metric_focus == "Profit (USD)":
+            metric_column = "Profit"
+            metric_label = "Profit (USD)"
+
+        if not perf_df.empty:
+            timeline_df = perf_df.copy()
+            timeline_df["ETD"] = pd.to_datetime(timeline_df["ETD"], errors="coerce")
+            timeline_df = timeline_df.dropna(subset=["ETD"])
+            timeline_df["Period"] = timeline_df["ETD"].dt.to_period("M").dt.to_timestamp()
+
+            if metric_column == "Shipments":
+                trend_group = timeline_df.groupby("Period").size().reset_index(name="Value")
+            else:
+                trend_group = (
+                    timeline_df.groupby("Period")[metric_column]
+                    .sum()
+                    .reset_index(name="Value")
+                )
+
+            if not trend_group.empty:
+                trend_fig = px.line(
+                    trend_group,
+                    x="Period",
+                    y="Value",
+                    markers=True,
+                    title=f"Shipments Trend Over Time – {metric_label}",
+                    labels={"Period": "Period", "Value": metric_label},
+                )
+
+            timeline_df["Year"] = timeline_df["ETD"].dt.year
+            if metric_column == "Shipments":
+                compare_group = (
+                    timeline_df.groupby(["Year", "Customer Type"])
+                    .size()
+                    .reset_index(name="Value")
+                )
+            else:
+                compare_group = (
+                    timeline_df.groupby(["Year", "Customer Type"])[metric_column]
+                    .sum()
+                    .reset_index(name="Value")
+                )
+
+            if not compare_group.empty:
+                compare_fig = px.bar(
+                    compare_group,
+                    x="Year",
+                    y="Value",
+                    color="Customer Type",
+                    barmode="group",
+                    title="Direct vs Coload Comparison",
+                    labels={"Value": metric_label, "Year": "Year"},
+                )
+
+        def _apply_dark_template(fig: go.Figure | None):
+            if fig is None:
+                return None
+            fig.update_layout(
+                template="plotly_dark",
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="#0b1727",
+                font=dict(color="#e2e8f0"),
+                margin=dict(t=60, b=40),
+            )
+            fig.update_xaxes(showgrid=False)
+            fig.update_yaxes(gridcolor="rgba(226,232,240,0.15)")
+            return fig
+
+        trend_fig = _apply_dark_template(trend_fig)
+        compare_fig = _apply_dark_template(compare_fig)
+
+        st.markdown("<div class='surface-title'>Biểu đồ chính</div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div class='surface-sub'>Bố cục hai cột: xu hướng thời gian và so sánh Direct vs Coload. Dữ liệu, bộ lọc giữ nguyên như trước.</div>",
+            unsafe_allow_html=True,
+        )
+
+        main_cols = st.columns([1.3, 1])
+        with main_cols[0]:
+            if trend_fig is not None:
+                st.plotly_chart(trend_fig, use_container_width=True)
+            else:
+                st.info("Chưa đủ dữ liệu ngày ETD để vẽ trend.")
+        with main_cols[1]:
+            if compare_fig is not None:
+                st.plotly_chart(compare_fig, use_container_width=True)
+            else:
+                st.info("Chưa đủ dữ liệu để so sánh Direct vs Coload.")
+
         # ---------- OPTION CHO BIỂU ĐỒ CHI TIẾT ----------
-        st.markdown("### 📊 Direct vs Coload – Tổng quan & biểu đồ chi tiết")
+        st.markdown(
+            "<div class='surface-title'>Direct vs Coload – Tổng quan & biểu đồ chi tiết</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<div class='surface-sub'>Các lựa chọn hiển thị vẫn dùng cùng dataset sau filter, chỉ đổi bố cục trình bày.</div>",
+            unsafe_allow_html=True,
+        )
 
         control_cols = st.columns([1.1, 1.1, 1.2])
         with control_cols[0]:
@@ -115,7 +251,10 @@ def render_dashboard_page():
             )
 
         # ---------- TÍNH DỮ LIỆU TỔNG QUAN ----------
-        st.markdown("#### 📊 Tổng quan Direct vs Coload (Volume/Profit, Loss, Routing)")
+        st.markdown(
+            "<div class='surface-title'>Tổng quan Direct vs Coload</div>",
+            unsafe_allow_html=True,
+        )
 
         if not perf_df.empty:
             perf_df = perf_df.copy()
@@ -312,6 +451,9 @@ def render_dashboard_page():
                     fig_detail.update_traces(textposition="outside")
                     fig_detail.update_layout(margin=dict(t=60, b=40))
 
+        fig_overview = _apply_dark_template(fig_overview)
+        fig_detail = _apply_dark_template(fig_detail)
+
         # ---------- LAYOUT: 1 HÀNG 2 CỘT ----------
         if fig_overview is None and fig_detail is None:
             st.info("Chưa có dữ liệu đủ để vẽ biểu đồ tổng hợp.")
@@ -331,14 +473,18 @@ def render_dashboard_page():
                     st.dataframe(loss_detail[show_loss_cols], use_container_width=True, height=260)
 
             with col_detail:
-                st.markdown("#### 📈 Biểu đồ chi tiết")
+                st.markdown("#### Biểu đồ chi tiết")
                 if fig_detail is not None:
                     st.plotly_chart(fig_detail, use_container_width=True)
                 else:
                     st.caption("Không có dữ liệu sau khi áp dụng bộ lọc để vẽ biểu đồ chi tiết.")
 
     # ---------- KPI NHÓM ----------
-    st.markdown("#### KPI theo nhóm (Revenue / Orders / Conversion)")
+    st.markdown("<div class='surface-title'>KPI theo nhóm</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='surface-sub'>Revenue / Orders / Conversion trình bày dạng metric cho dễ so sánh.</div>",
+        unsafe_allow_html=True,
+    )
     kpi_group_df = aggregate_kpi_categories(df_time)
     kpi_cols = st.columns(3)
     for idx, (label, value, note) in enumerate(
@@ -352,7 +498,7 @@ def render_dashboard_page():
             else:
                 st.metric(label, f"{int(value)}", help=note)
 
-    with st.expander("📋 Xem dữ liệu đã lọc"):
+    with st.expander("Xem dữ liệu đã lọc"):
         st.subheader("Dataset sau filter/timeframe")
         st.dataframe(df_time, use_container_width=True)
 
