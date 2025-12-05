@@ -20,15 +20,25 @@ from pages.shipment_follow_page import (
 def render_dashboard_page():
     """KPI Dashboard cho shipment – tách riêng khỏi trang nhập liệu."""
     st.markdown(
-        "<div class='section-title'>Shipment KPI Dashboard</div>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        "<div class='section-sub'>Tổng quan Direct vs Coload, routing & customer loss. Dùng chung bộ lọc với Follow Shipment.</div>",
+        """
+        <div class='page-hero'>
+            <div class='page-hero__title'>Shipment KPI Dashboard</div>
+            <div class='page-hero__desc'>Tổng quan Direct vs Coload, routing & customer loss với bố cục mới. Bộ lọc, tính toán và biểu đồ giữ nguyên.</div>
+            <div class='page-hero__badges'>
+                <span class='badge-pill'>Volume & Profit</span>
+                <span class='badge-pill'>Routing</span>
+                <span class='badge-pill'>Customer loss</span>
+            </div>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 
-    st.markdown("---")
+    st.markdown("<div class='surface-title'>Bộ lọc & phạm vi xem</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='surface-sub'>Dùng chung control với trang Follow Shipment để đảm bảo thống nhất dữ liệu.</div>",
+        unsafe_allow_html=True,
+    )
 
     # Đọc toàn bộ Shipments.xlsx
     df_all = load_all_shipments()
@@ -74,6 +84,17 @@ def render_dashboard_page():
             else df_all_filtered
         )
 
+        # Quick KPI header sau filter
+        header_cols = st.columns(4)
+        with header_cols[0]:
+            st.metric("Shipments đã lọc", len(df_time))
+        with header_cols[1]:
+            st.metric("Timeframe", filter_state["timeframe"])
+        with header_cols[2]:
+            st.metric("Customer type", filter_state["customer_type"])
+        with header_cols[3]:
+            st.metric("Hiển thị loss", "Có" if filter_state["show_loss"] else "Không")
+
         def _clean_real_shipments(df: pd.DataFrame) -> pd.DataFrame:
             if df.empty:
                 return df
@@ -91,7 +112,14 @@ def render_dashboard_page():
         history_df = _clean_real_shipments(df_all_filtered)
 
         # ---------- OPTION CHO BIỂU ĐỒ CHI TIẾT ----------
-        st.markdown("### 📊 Direct vs Coload – Tổng quan & biểu đồ chi tiết")
+        st.markdown(
+            "<div class='surface-title'>Direct vs Coload – Tổng quan & biểu đồ chi tiết</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<div class='surface-sub'>Các lựa chọn hiển thị vẫn dùng cùng dataset sau filter, chỉ đổi bố cục trình bày.</div>",
+            unsafe_allow_html=True,
+        )
 
         control_cols = st.columns([1.1, 1.1, 1.2])
         with control_cols[0]:
@@ -115,7 +143,10 @@ def render_dashboard_page():
             )
 
         # ---------- TÍNH DỮ LIỆU TỔNG QUAN ----------
-        st.markdown("#### 📊 Tổng quan Direct vs Coload (Volume/Profit, Loss, Routing)")
+        st.markdown(
+            "<div class='surface-title'>Tổng quan Direct vs Coload</div>",
+            unsafe_allow_html=True,
+        )
 
         if not perf_df.empty:
             perf_df = perf_df.copy()
@@ -331,14 +362,18 @@ def render_dashboard_page():
                     st.dataframe(loss_detail[show_loss_cols], use_container_width=True, height=260)
 
             with col_detail:
-                st.markdown("#### 📈 Biểu đồ chi tiết")
+                st.markdown("#### Biểu đồ chi tiết")
                 if fig_detail is not None:
                     st.plotly_chart(fig_detail, use_container_width=True)
                 else:
                     st.caption("Không có dữ liệu sau khi áp dụng bộ lọc để vẽ biểu đồ chi tiết.")
 
     # ---------- KPI NHÓM ----------
-    st.markdown("#### KPI theo nhóm (Revenue / Orders / Conversion)")
+    st.markdown("<div class='surface-title'>KPI theo nhóm</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='surface-sub'>Revenue / Orders / Conversion trình bày dạng metric cho dễ so sánh.</div>",
+        unsafe_allow_html=True,
+    )
     kpi_group_df = aggregate_kpi_categories(df_time)
     kpi_cols = st.columns(3)
     for idx, (label, value, note) in enumerate(
@@ -352,7 +387,7 @@ def render_dashboard_page():
             else:
                 st.metric(label, f"{int(value)}", help=note)
 
-    with st.expander("📋 Xem dữ liệu đã lọc"):
+    with st.expander("Xem dữ liệu đã lọc"):
         st.subheader("Dataset sau filter/timeframe")
         st.dataframe(df_time, use_container_width=True)
 
