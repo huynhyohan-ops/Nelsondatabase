@@ -26,7 +26,7 @@ def render_shipment_hub():
     st.markdown(
         """
         <div class='page-hero'>
-            <div class='page-hero__title'>📦 Shipment center</div>
+            <div class='page-hero__title'>Shipment center</div>
             <div class='page-hero__desc'>Theo dõi lô hàng, dashboard KPI và cảnh báo được tổ chức lại trực quan, giữ nguyên data pipeline.</div>
             <div class='page-hero__badges'>
                 <span class='badge-pill'>Tracking</span>
@@ -66,7 +66,7 @@ def render_shipment_hub():
             "<div class='pill-note blue'>Dùng lại bộ lọc hiện có</div></div>",
             unsafe_allow_html=True,
         )
-        if st.button("📦 Vào Follow Shipment", key="btn_ship_follow", use_container_width=True):
+        if st.button("Vào Follow Shipment", key="btn_ship_follow", use_container_width=True):
             st.session_state["sub_page"] = "SHIPMENT.Follow"
             safe_rerun()
 
@@ -79,7 +79,7 @@ def render_shipment_hub():
             "<div class='pill-note green'>Plotly charts giữ nguyên</div></div>",
             unsafe_allow_html=True,
         )
-        if st.button("📊 Vào Dashboard", key="btn_ship_dashboard", use_container_width=True):
+        if st.button("Vào Dashboard", key="btn_ship_dashboard", use_container_width=True):
             st.session_state["sub_page"] = "SHIPMENT.Dashboard"
             safe_rerun()
 
@@ -91,7 +91,7 @@ def render_shipment_hub():
             "<div class='surface-title'>Chi tiết</div><div class='surface-sub'>Bố cục mới cho phần nội dung, giữ nguyên tính toán trong các hàm con.</div>",
             unsafe_allow_html=True,
         )
-        if st.button("⬅️ Quay lại menu Shipment", key="btn_back_shipment", use_container_width=True):
+        if st.button("Quay lại menu Shipment", key="btn_back_shipment", use_container_width=True):
             st.session_state["sub_page"] = None
             safe_rerun()
 

@@ -22,7 +22,7 @@ def render_dashboard_page():
     st.markdown(
         """
         <div class='page-hero'>
-            <div class='page-hero__title'>📊 Shipment KPI Dashboard</div>
+            <div class='page-hero__title'>Shipment KPI Dashboard</div>
             <div class='page-hero__desc'>Tổng quan Direct vs Coload, routing & customer loss với bố cục mới. Bộ lọc, tính toán và biểu đồ giữ nguyên.</div>
             <div class='page-hero__badges'>
                 <span class='badge-pill'>Volume & Profit</span>
@@ -113,7 +113,7 @@ def render_dashboard_page():
 
         # ---------- OPTION CHO BIỂU ĐỒ CHI TIẾT ----------
         st.markdown(
-            "<div class='surface-title'>📊 Direct vs Coload – Tổng quan & biểu đồ chi tiết</div>",
+            "<div class='surface-title'>Direct vs Coload – Tổng quan & biểu đồ chi tiết</div>",
             unsafe_allow_html=True,
         )
         st.markdown(
@@ -144,7 +144,7 @@ def render_dashboard_page():
 
         # ---------- TÍNH DỮ LIỆU TỔNG QUAN ----------
         st.markdown(
-            "<div class='surface-title'>📌 Tổng quan Direct vs Coload</div>",
+            "<div class='surface-title'>Tổng quan Direct vs Coload</div>",
             unsafe_allow_html=True,
         )
 
@@ -362,14 +362,14 @@ def render_dashboard_page():
                     st.dataframe(loss_detail[show_loss_cols], use_container_width=True, height=260)
 
             with col_detail:
-                st.markdown("#### 📈 Biểu đồ chi tiết")
+                st.markdown("#### Biểu đồ chi tiết")
                 if fig_detail is not None:
                     st.plotly_chart(fig_detail, use_container_width=True)
                 else:
                     st.caption("Không có dữ liệu sau khi áp dụng bộ lọc để vẽ biểu đồ chi tiết.")
 
     # ---------- KPI NHÓM ----------
-    st.markdown("<div class='surface-title'>📈 KPI theo nhóm</div>", unsafe_allow_html=True)
+    st.markdown("<div class='surface-title'>KPI theo nhóm</div>", unsafe_allow_html=True)
     st.markdown(
         "<div class='surface-sub'>Revenue / Orders / Conversion trình bày dạng metric cho dễ so sánh.</div>",
         unsafe_allow_html=True,
@@ -387,7 +387,7 @@ def render_dashboard_page():
             else:
                 st.metric(label, f"{int(value)}", help=note)
 
-    with st.expander("📋 Xem dữ liệu đã lọc"):
+    with st.expander("Xem dữ liệu đã lọc"):
         st.subheader("Dataset sau filter/timeframe")
         st.dataframe(df_time, use_container_width=True)
 

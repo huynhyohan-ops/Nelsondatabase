@@ -31,7 +31,7 @@ def render_pricing_hub():
     st.markdown(
         """
         <div class='page-hero'>
-            <div class='page-hero__title'>💰 Pricing center</div>
+            <div class='page-hero__title'>Pricing center</div>
             <div class='page-hero__desc'>Quản lý bảng giá, tạo báo giá nhanh và kiểm tra lịch tàu. Các thao tác vẫn dùng chung core logic hiện có.</div>
             <div class='page-hero__badges'>
                 <span class='badge-pill'>Upload & Normalize</span>
@@ -76,7 +76,7 @@ def render_pricing_hub():
             "<div class='pill-note blue'>Bảo toàn logic chuẩn hoá</div></div>",
             unsafe_allow_html=True,
         )
-        if st.button("☁️ Vào Upload & Normalize", key="btn_pricing_upload", use_container_width=True):
+        if st.button("Vào Upload & Normalize", key="btn_pricing_upload", use_container_width=True):
             st.session_state["sub_page"] = "PRICING.Upload"
             safe_rerun()
 
@@ -89,7 +89,7 @@ def render_pricing_hub():
             "<div class='pill-note green'>Dùng lại generate_quote</div></div>",
             unsafe_allow_html=True,
         )
-        if st.button("💲 Vào Quote", key="btn_pricing_quote", use_container_width=True):
+        if st.button("Vào Quote", key="btn_pricing_quote", use_container_width=True):
             st.session_state["sub_page"] = "PRICING.Quote"
             safe_rerun()
 
@@ -102,7 +102,7 @@ def render_pricing_hub():
             "<div class='pill-note amber'>Tự động từ master</div></div>",
             unsafe_allow_html=True,
         )
-        if st.button("📅 Vào Schedules", key="btn_pricing_schedules", use_container_width=True):
+        if st.button("Vào Schedules", key="btn_pricing_schedules", use_container_width=True):
             st.session_state["sub_page"] = "PRICING.Schedules"
             safe_rerun()
 
@@ -115,7 +115,7 @@ def render_pricing_hub():
             "<div class='surface-title'>Chi tiết</div><div class='surface-sub'>Khu vực làm việc giữ nguyên engine & data, chỉ đổi bố cục hiển thị.</div>",
             unsafe_allow_html=True,
         )
-        if st.button("⬅️ Quay lại menu Pricing", key="btn_back_pricing", use_container_width=True):
+        if st.button("Quay lại menu Pricing", key="btn_back_pricing", use_container_width=True):
             st.session_state["sub_page"] = None
             safe_rerun()
 
@@ -130,5 +130,5 @@ def render_pricing_hub():
 # Khi file này được gọi như 1 page, chỉ cần init + render hub
 # Khi page này được gọi như 1 trang multi-page
 init_pricing_state()
-top_menu(active="pricing")     # ⬅️ menu ngang 3 mục
+top_menu(active="pricing")     # menu ngang 3 mục
 render_pricing_hub()

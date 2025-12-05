@@ -5,7 +5,7 @@ def render_crm_page():
     st.markdown(
         """
         <div class='page-hero'>
-            <div class='page-hero__title'>👤 CRM workspace</div>
+            <div class='page-hero__title'>CRM workspace</div>
             <div class='page-hero__desc'>Khung giao diện mới cho quản lý khách, pipeline và lịch sử báo giá. Logic kết nối dữ liệu sẽ được tái sử dụng khi bổ sung.</div>
             <div class='page-hero__badges'>
                 <span class='badge-pill'>Sales pipeline</span>
