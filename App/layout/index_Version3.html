@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Nelsondatabase - Demo Teal Theme</title>
+
+  <!-- Google Font (Gothic-like / clean) -->
+  <link href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@400;600;700&display=swap" rel="stylesheet">
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-sA+q4f2r9Gk5Yh2Xjv7U2kX3l0QHq7v8Zf7vQm0g1v8=" crossorigin=""/>
+
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="logo">
+        <div class="logo-mark">ND</div>
+        <div class="logo-text">NelsonDB</div>
+      </div>
+
+      <nav>
+        <a class="nav-item active" data-view="dashboard">Dashboard</a>
+        <a class="nav-item" data-view="shipments">Shipments</a>
+        <a class="nav-item" data-view="map">Map</a>
+        <a class="nav-item" data-view="crm">CRM</a>
+        <a class="nav-item" data-view="pipeline">Pipeline</a>
+        <a class="nav-item" data-view="reports">Reports</a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button class="btn ghost" id="themeToggle">Switch to Light</button>
+        <div class="small">© NelsonDB</div>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="header">
+        <div class="header-left">
+          <div class="page-title">Customs Clearance</div>
+          <div class="page-sub">Overview · Shipments · Declarations</div>
+        </div>
+
+        <div class="header-right">
+          <div class="search">
+            <input id="globalSearch" placeholder="Tìm shipment ID, client..." />
+          </div>
+          <button id="btnInvite" class="btn">Invite</button>
+          <div class="avatar">HV</div>
+        </div>
+      </header>
+
+      <main id="content" class="content">
+        <!-- Dashboard -->
+        <section id="view-dashboard" class="view">
+          <div class="kpi-row" id="kpiRow"></div>
+
+          <div class="charts-row">
+            <div class="chart-card">
+              <div class="card-title">Price</div>
+              <canvas id="lineChart" height="180"></canvas>
+            </div>
+
+            <div class="chart-card small">
+              <div class="card-title">Declarations</div>
+              <canvas id="donutChart" height="180"></canvas>
+              <div class="chart-legend" id="donutLegend"></div>
+            </div>
+          </div>
+
+          <div class="map-recent">
+            <div id="miniMap" class="mini-map"></div>
+            <div class="recent-activity card">
+              <h3>Recent Activity</h3>
+              <ul id="activityList"></ul>
+            </div>
+          </div>
+        </section>
+
+        <!-- Shipments -->
+        <section id="view-shipments" class="view hidden">
+          <div class="controls">
+            <select id="filterStatus">
+              <option value="all">Tất cả trạng thái</option>
+              <option>In Transit</option>
+              <option>Delayed</option>
+              <option>Customs</option>
+              <option>Delivered</option>
+            </select>
+            <input id="searchShip" placeholder="Tìm theo ID hoặc client" />
+            <button id="exportBtn" class="btn ghost">Export CSV</button>
+            <button id="createBtn" class="btn primary">Create Shipment</button>
+          </div>
+
+          <div class="table-wrap card">
+            <table class="table" id="shipTable">
+              <thead><tr><th>ID</th><th>Client</th><th>Route</th><th>Status</th><th>ETA</th><th>Assigned</th><th>Actions</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Map view -->
+        <section id="view-map" class="view hidden">
+          <div class="card map-card">
+            <div id="map" class="map-full"></div>
+          </div>
+        </section>
+
+        <!-- CRM -->
+        <section id="view-crm" class="view hidden">
+          <h1>CRM - Leads</h1>
+          <div id="leadsList" class="cards"></div>
+        </section>
+
+        <!-- Pipeline -->
+        <section id="view-pipeline" class="view hidden">
+          <h1>Sales Pipeline</h1>
+          <div class="pipeline" id="pipeline">
+            <div class="column" data-stage="New">
+              <div class="col-header">New <span class="count"></span></div>
+              <div class="col-body" ondragover="event.preventDefault()"></div>
+            </div>
+            <div class="column" data-stage="Quote Sent">
+              <div class="col-header">Quote Sent <span class="count"></span></div>
+              <div class="col-body" ondragover="event.preventDefault()"></div>
+            </div>
+            <div class="column" data-stage="Negotiation">
+              <div class="col-header">Negotiation <span class="count"></span></div>
+              <div class="col-body" ondragover="event.preventDefault()"></div>
+            </div>
+            <div class="column" data-stage="Won">
+              <div class="col-header">Won <span class="count"></span></div>
+              <div class="col-body" ondragover="event.preventDefault()"></div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- Slide-over detail -->
+    <aside id="detailPanel" class="detail-panel hidden">
+      <button id="closeDetail" class="close">&times;</button>
+      <div id="detailContent"></div>
+    </aside>
+
+  </div>
+
+  <!-- Libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-GZC9F0j3tP+KtWQtk7mQbT3r0nQ4a4xw4vY7q0h4Y6w=" crossorigin=""></script>
+
+  <script src="app.js"></script>
+</body>
+</html>

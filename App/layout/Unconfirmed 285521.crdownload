@@ -1,0 +1,308 @@
+// Demo prototype logic (teal theme)
+// Sample data embedded (same structure)
+const sampleData = {
+  shipments: [
+    {"id":"SH-2025-001","client":"Công ty ABC","origin":"HCM, VN","destination":"Los Angeles, USA","status":"In Transit","eta":"2025-12-10","etd":"2025-11-28","assigned_to":"Nguyễn Văn A","route":"HCM - LA","latlng":[[10.8231,106.6297],[34.0522,-118.2437]]},
+    {"id":"SH-2025-002","client":"Công ty XYZ","origin":"Hanoi, VN","destination":"Hamburg, DE","status":"Delayed","eta":"2025-12-12","etd":"2025-11-30","assigned_to":"Trần Thị B","route":"HN - Hamburg","latlng":[[21.0278,105.8342],[53.5511,9.9937]]},
+    {"id":"SH-2025-003","client":"LogiFast","origin":"Da Nang, VN","destination":"Singapore","status":"Customs","eta":"2025-12-06","etd":"2025-11-25","assigned_to":"Lê Văn C","route":"DN - SG","latlng":[[16.0544,108.2022],[1.3521,103.8198]]},
+    {"id":"SH-2025-004","client":"AlphaTrade","origin":"HCM, VN","destination":"Rotterdam, NL","status":"Delivered","eta":"2025-11-28","etd":"2025-11-10","assigned_to":"Nguyễn Văn A","route":"HCM - Rotterdam","latlng":[[10.8231,106.6297],[51.9225,4.47917]]}
+  ],
+  leads: [
+    {"id":"L-1001","name":"Nguyễn Văn Q","company":"Công ty ABC","phone":"0901 111 222","stage":"Contacted","value":12000},
+    {"id":"L-1002","name":"Trần Thị Z","company":"LogiFast","phone":"0902 333 444","stage":"New","value":5000}
+  ],
+  deals: [
+    {"id":"D-001","title":"Deal ABC - 20 containers","value":15000,"stage":"New"},
+    {"id":"D-002","title":"LogiFast - Air Freight","value":8000,"stage":"Quote Sent"},
+    {"id":"D-003","title":"Export HN - EU","value":22000,"stage":"Negotiation"}
+  ]
+};
+
+document.addEventListener('DOMContentLoaded', init);
+
+function $(q){return document.querySelector(q)}
+function $all(q){return Array.from(document.querySelectorAll(q))}
+
+function init(){
+  setupNav();
+  renderKPI();
+  initCharts();
+  renderRecent();
+  initMiniMap();
+  renderShipmentsTable(sampleData.shipments);
+  initShipControls();
+  initFullMap();
+  renderLeads();
+  renderPipeline();
+  initGlobalSearch();
+  initDetailClose();
+  initThemeToggle();
+}
+
+/* Navigation */
+function setupNav(){
+  $all('.nav-item').forEach(a=>{
+    a.addEventListener('click',()=>{
+      $all('.nav-item').forEach(n=>n.classList.remove('active'));
+      a.classList.add('active');
+      const view = a.dataset.view;
+      $all('.view').forEach(v=>v.classList.add('hidden'));
+      $(`#view-${view}`).classList.remove('hidden');
+      if(view==='map'){ setTimeout(()=>map.invalidateSize(),300) }
+    });
+  });
+}
+
+/* KPI */
+function renderKPI(){
+  const k = document.getElementById('kpiRow');
+  const total = sampleData.shipments.length;
+  const ontime = sampleData.shipments.filter(s=>s.status==='Delivered').length;
+  k.innerHTML = `
+    <div class="kpi"><h4>Total Shipments</h4><p>${total}</p></div>
+    <div class="kpi"><h4>On-time %</h4><p>${Math.round((ontime/total)*100) || 0}%</p></div>
+    <div class="kpi"><h4>Delayed</h4><p>${sampleData.shipments.filter(s=>s.status==='Delayed').length}</p></div>
+    <div class="kpi"><h4>Assigned Users</h4><p>${[...new Set(sampleData.shipments.map(s=>s.assigned_to))].length}</p></div>
+  `;
+}
+
+/* Charts - Chart.js */
+let mainLineChart, donutChart;
+function initCharts(){
+  const ctxLine = document.getElementById('lineChart');
+  const labels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const data1 = [320,340,310,360,390,420,480,450,430,410,400,380];
+  const data2 = [280,300,290,330,350,370,420,400,390,380,360,350];
+
+  mainLineChart = new Chart(ctxLine, {
+    type:'line',
+    data:{
+      labels,
+      datasets:[
+        {label:'2021',data:data1,borderColor:getColor('--primary'),backgroundColor:gradientFill(ctxLine,'rgba(31,182,168,0.12)'),tension:0.35,pointRadius:3,pointBackgroundColor:getColor('--primary')},
+        {label:'2022',data:data2,borderColor:getColor('--accent'),backgroundColor:'rgba(255,176,32,0.06)',tension:0.35,pointRadius:3,pointBackgroundColor:getColor('--accent')}
+      ]
+    },
+    options:{
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{grid:{display:false},ticks:{color:getColorVar('--mutedText')}},
+        y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:getColorVar('--mutedText')}}
+      }
+    }
+  });
+
+  const ctxDon = document.getElementById('donutChart');
+  const statusCounts = getStatusCounts();
+  donutChart = new Chart(ctxDon, {
+    type:'doughnut',
+    data:{
+      labels:Object.keys(statusCounts),
+      datasets:[{data:Object.values(statusCounts), backgroundColor:[getColorVar('--primary'), getColorVar('--accent'), '#7b61ff', '#28A745']}]
+    },
+    options:{plugins:{legend:{display:false}}}
+  });
+
+  // legend
+  const legend = document.getElementById('donutLegend');
+  legend.innerHTML = Object.entries(statusCounts).map(([k,v],i)=>`<div style="margin:6px 0;color:var(--mutedText)"><span style="display:inline-block;width:10px;height:10px;background:${donutChart.data.datasets[0].backgroundColor[i]};margin-right:8px;border-radius:2px"></span>${k} — ${v}</div>`).join('');
+}
+
+function getColorVar(name){
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+function getColor(key){
+  // map css var name to actual color string for Chart usage
+  if(key==='--primary') return getColorVar('--primary');
+  if(key==='--accent') return getColorVar('--accent');
+  return '#fff';
+}
+function gradientFill(canvas, color){
+  const ctx = canvas.getContext('2d');
+  const g = ctx.createLinearGradient(0,0,0,canvas.height);
+  g.addColorStop(0, color);
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  return g;
+}
+
+function getStatusCounts(){
+  const counts = {};
+  sampleData.shipments.forEach(s=>counts[s.status]=(counts[s.status]||0)+1);
+  return counts;
+}
+
+/* Recent list */
+function renderRecent(){
+  const list = document.getElementById('activityList');
+  list.innerHTML = sampleData.shipments.slice(0,6).map(s=>`<li style="margin-bottom:6px"><strong style="color:var(--text)">${s.id}</strong> — ${s.client} — <span style="color:var(--mutedText)">${s.status} (ETA ${s.eta})</span></li>`).join('');
+}
+
+/* Mini map using Leaflet - dark tiles */
+let miniMap, map;
+function initMiniMap(){
+  try{
+    miniMap = L.map('miniMap', {attributionControl:false, zoomControl:false}).setView([15,100], 3);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',{maxZoom:19}).addTo(miniMap);
+    sampleData.shipments.forEach(s=>{
+      const lat = s.latlng[0];
+      L.circleMarker(lat,{radius:6,color:getColorVar('--primary'),fillColor:getColorVar('--primary'),fillOpacity:1}).addTo(miniMap).bindPopup(`${s.id} - ${s.status}`);
+    });
+  }catch(e){
+    console.warn('MiniMap init failed',e);
+  }
+}
+
+function initFullMap(){
+  try{
+    map = L.map('map').setView([15,100], 2);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',{maxZoom:19,attribution:'© OpenStreetMap, © CARTO'}).addTo(map);
+    sampleData.shipments.forEach(s=>{
+      const p = s.latlng[0];
+      const q = s.latlng[s.latlng.length-1];
+      const marker = L.marker(p,{icon: L.divIcon({className:'custom-marker', html:`<div style="background:${getColorVar('--primary')};width:12px;height:12px;border-radius:12px;border:2px solid rgba(0,0,0,0.25)"></div>`})}).addTo(map)
+        .bindPopup(`<b>${s.id}</b><br>${s.client} — ${s.status}<br><a href="#" onclick="openDetail('${s.id}');return false">Open</a>`);
+      const poly = L.polyline([p,q], {color:getColorVar('--primary'),weight:2,opacity:0.65}).addTo(map);
+    });
+  }catch(e){
+    console.warn('FullMap init failed',e);
+  }
+}
+
+/* Shipments table render and controls */
+function renderShipmentsTable(list){
+  const tbody = document.querySelector('#shipTable tbody');
+  tbody.innerHTML = list.map(s=>`<tr>
+    <td>${s.id}</td><td>${s.client}</td><td>${s.route}</td>
+    <td><span class="badge ${s.status.replace(/ /g,'\\ ')}">${s.status}</span></td>
+    <td>${s.eta}</td><td>${s.assigned_to}</td>
+    <td><button class="btn ghost small" onclick="openDetail('${s.id}')">Details</button> <button class="btn ghost small" onclick="centerOnMap('${s.id}')">Track</button></td>
+  </tr>`).join('');
+}
+
+function initShipControls(){
+  $('#filterStatus').addEventListener('change', e=>{
+    const v = e.target.value;
+    const list = v==='all' ? sampleData.shipments : sampleData.shipments.filter(s=>s.status===v);
+    renderShipmentsTable(list);
+  });
+  $('#searchShip').addEventListener('input', e=>{
+    const q = e.target.value.toLowerCase();
+    const list = sampleData.shipments.filter(s=>s.id.toLowerCase().includes(q)||s.client.toLowerCase().includes(q));
+    renderShipmentsTable(list);
+  });
+  $('#exportBtn').addEventListener('click', exportCSV);
+  $('#createBtn').addEventListener('click', ()=>alert('Create shipment flow (prototype)'));
+}
+
+function exportCSV(){
+  const rows = [['id','client','origin','destination','status','eta','assigned']];
+  sampleData.shipments.forEach(s=>rows.push([s.id,s.client,s.origin,s.destination,s.status,s.eta,s.assigned_to]));
+  const csv = rows.map(r=>r.map(c=>`"${c}"`).join(',')).join('\n');
+  const blob = new Blob([csv],{type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download='shipments.csv'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* Map helpers */
+function centerOnMap(id){
+  const s = sampleData.shipments.find(x=>x.id===id);
+  if(!s || !map) return alert('Map not ready');
+  map.setView(s.latlng[0],4);
+  openDetail(id);
+}
+
+/* Detail slide-over */
+window.openDetail = function(id){
+  const s = sampleData.shipments.find(x=>x.id===id);
+  if(!s) return;
+  $('#detailPanel').classList.remove('hidden');
+  const content = document.getElementById('detailContent');
+  content.innerHTML = `<h2 style="margin:0 0 8px 0;color:var(--text)">${s.id} <small style="color:var(--mutedText);font-weight:600">${s.status}</small></h2>
+    <p class="small-muted"><strong>Client:</strong> ${s.client}</p>
+    <p class="small-muted"><strong>Route:</strong> ${s.route}</p>
+    <p class="small-muted"><strong>ETD:</strong> ${s.etd} — <strong>ETA:</strong> ${s.eta}</p>
+    <p class="small-muted"><strong>Assigned:</strong> ${s.assigned_to}</p>
+    <hr style="border:none;border-top:1px solid rgba(255,255,255,0.03);margin:12px 0">
+    <h4 style="margin:0 0 8px 0;color:var(--mutedText)">Timeline</h4>
+    <ul style="color:var(--mutedText);margin:0 0 12px 18px"><li>2025-11-25: Pickup</li><li>2025-11-28: Depart</li><li>2025-12-06: Arrival expected</li></ul>
+    <button class="btn primary" onclick="alert('Change status (prototype)')">Change status</button>
+  `;
+};
+
+function initDetailClose(){
+  $('#closeDetail').addEventListener('click',()=>$('#detailPanel').classList.add('hidden'));
+}
+
+/* Leads & Pipeline */
+function renderLeads(){
+  const c = $('#leadsList');
+  c.innerHTML = sampleData.leads.map(l=>`<div class="card" style="margin-bottom:10px">
+    <h4 style="margin:0 0 6px 0;color:var(--text)">${l.name} — ${l.company}</h4>
+    <div class="small-muted">Stage: ${l.stage} • Value: $${l.value}</div>
+    <div style="margin-top:8px"><button class="btn ghost" onclick="alert('Open lead ${l.id} (prototype)')">Open</button></div>
+  </div>`).join('');
+}
+
+function renderPipeline(){
+  const pipelineRoot = $('#pipeline');
+  sampleData.deals.forEach(d=>{
+    const col = pipelineRoot.querySelector(`.column[data-stage="${d.stage}"] .col-body`) || pipelineRoot.querySelector('.column .col-body');
+    if(col){
+      const card = document.createElement('div');
+      card.className='card-deal';
+      card.draggable=true;
+      card.id = `deal-${d.id}`;
+      card.innerHTML = `<strong>${d.title}</strong><div style="font-size:12px;color:var(--mutedText)">$${d.value}</div>`;
+      card.addEventListener('dragstart',e=>{ card.classList.add('dragging'); e.dataTransfer.setData('text/plain', d.id); });
+      card.addEventListener('dragend',()=>card.classList.remove('dragging'));
+      col.appendChild(card);
+    }
+  });
+
+  $all('.col-body').forEach(col=>{
+    col.addEventListener('drop', e=>{
+      const id = e.dataTransfer.getData('text/plain');
+      const card = document.getElementById(`deal-${id}`);
+      if(card) col.appendChild(card);
+      showToast('Deal moved (prototype)');
+      updatePipelineCounts();
+    });
+  });
+  updatePipelineCounts();
+}
+
+function updatePipelineCounts(){
+  $all('.column').forEach(col=>{
+    const c = col.querySelectorAll('.col-body .card-deal').length;
+    col.querySelector('.count').textContent = c ? `(${c})` : '';
+  });
+}
+
+/* small toast */
+function showToast(msg){
+  const t = document.createElement('div'); t.textContent=msg;
+  Object.assign(t.style,{position:'fixed',bottom:'22px',right:'22px',background:'#022a28',color:'#c7fff7',padding:'10px 14px',borderRadius:'8px',zIndex:1000,boxShadow:'0 8px 24px rgba(0,0,0,0.6)'});
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(),2200);
+}
+
+/* Global search */
+function initGlobalSearch(){
+  $('#globalSearch').addEventListener('keydown', e=>{
+    if(e.key==='Enter'){
+      const q = e.target.value.trim();
+      if(q){
+        const found = sampleData.shipments.find(s=>s.id===q || s.client.toLowerCase().includes(q.toLowerCase()));
+        if(found){ openDetail(found.id); } else { showToast('Không tìm thấy'); }
+      }
+    }
+  });
+}
+
+/* Theme toggle placeholder */
+function initThemeToggle(){
+  $('#themeToggle').addEventListener('click', ()=>{
+    alert('Theme toggle (prototype) - in real app would switch to light design.');
+  });
+}
