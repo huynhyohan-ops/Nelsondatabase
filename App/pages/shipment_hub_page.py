@@ -24,15 +24,35 @@ def render_shipment_hub():
     """Trang hub Shipment (Follow shipment / Dashboard)."""
 
     st.markdown(
-        "<div class='section-title'>Shipment center</div>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        "<div class='section-sub'>Theo dõi lô hàng, kiểm tra KPI, xem tổng quan dashboard.</div>",
+        """
+        <div class='page-hero'>
+            <div class='page-hero__title'>📦 Shipment center</div>
+            <div class='page-hero__desc'>Theo dõi lô hàng, dashboard KPI và cảnh báo được tổ chức lại trực quan, giữ nguyên data pipeline.</div>
+            <div class='page-hero__badges'>
+                <span class='badge-pill'>Tracking</span>
+                <span class='badge-pill'>KPI Dashboard</span>
+                <span class='badge-pill'>Cảnh báo</span>
+            </div>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 
     sub_page = st.session_state.get("sub_page")
+
+    overview_cols = st.columns(3)
+    with overview_cols[0]:
+        st.metric("Khu vực", "Follow & Dashboard")
+    with overview_cols[1]:
+        st.metric("Đang xem", (sub_page or "Menu chính").replace("SHIPMENT.", ""))
+    with overview_cols[2]:
+        st.metric("Thư mục dữ liệu", "Sẵn sàng" if DATA_DIR.exists() else "Chưa có")
+
+    st.markdown("<div class='surface-title'>Lối tắt</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='surface-sub'>Chọn luồng cần truy cập. Hệ thống tính toán, filter và biểu đồ giữ nguyên.</div>",
+        unsafe_allow_html=True,
+    )
 
     # 2 card chính của Shipment
     c1, c2 = st.columns(2)
@@ -40,9 +60,10 @@ def render_shipment_hub():
     # --- CARD 1: Follow shipment ---
     with c1:
         st.markdown(
-            "<div class='info-card'><div class='info-card-title'>Follow shipment</div>"
+            "<div class='action-card'><div class='info-card-title'>Follow shipment</div>"
             "<div class='info-card-value'>Tracking</div>"
-            "<div class='info-card-sub'>Theo dõi tiến độ lô hàng & cảnh báo.</div></div>",
+            "<div class='info-card-sub'>Theo dõi tiến độ lô hàng & cảnh báo.</div>"
+            "<div class='pill-note blue'>Dùng lại bộ lọc hiện có</div></div>",
             unsafe_allow_html=True,
         )
         if st.button("📦 Vào Follow Shipment", key="btn_ship_follow", use_container_width=True):
@@ -52,19 +73,25 @@ def render_shipment_hub():
     # --- CARD 2: Dashboard ---
     with c2:
         st.markdown(
-            "<div class='info-card'><div class='info-card-title'>Dashboard</div>"
+            "<div class='action-card'><div class='info-card-title'>Dashboard</div>"
             "<div class='info-card-value'>KPI</div>"
-            "<div class='info-card-sub'>Biểu đồ, báo cáo tổng hợp shipment.</div></div>",
+            "<div class='info-card-sub'>Biểu đồ, báo cáo tổng hợp shipment.</div>"
+            "<div class='pill-note green'>Plotly charts giữ nguyên</div></div>",
             unsafe_allow_html=True,
         )
         if st.button("📊 Vào Dashboard", key="btn_ship_dashboard", use_container_width=True):
             st.session_state["sub_page"] = "SHIPMENT.Dashboard"
             safe_rerun()
 
+    st.markdown("---")
+
     # --- Phần render sub-page ---
     if sub_page and sub_page.startswith("SHIPMENT."):
-        st.markdown("---")
-        if st.button("⬅️ Quay lại menu Shipment", key="btn_back_shipment"):
+        st.markdown(
+            "<div class='surface-title'>Chi tiết</div><div class='surface-sub'>Bố cục mới cho phần nội dung, giữ nguyên tính toán trong các hàm con.</div>",
+            unsafe_allow_html=True,
+        )
+        if st.button("⬅️ Quay lại menu Shipment", key="btn_back_shipment", use_container_width=True):
             st.session_state["sub_page"] = None
             safe_rerun()
 
