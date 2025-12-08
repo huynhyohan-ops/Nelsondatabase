@@ -1,0 +1,22 @@
+html, body, [data-testid="stAppViewContainer"] {
+    background-color: #99CED3;
+    color: #102A43;
+}
+
+[data-testid="stSidebar"] {
+    background-color: #86B3D1;
+}
+
+[data-testid="stHeader"] {
+    background-color: #4D6D9A;
+    color: white;
+}
+
+.css-1q8dd3e {
+    background-color: #FFFFFF;
+    color: #102A43;
+}
+
+.block-container {
+    background-color: #99CED3;
+}
