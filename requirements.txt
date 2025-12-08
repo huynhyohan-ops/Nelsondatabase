@@ -5,3 +5,4 @@ xlsxwriter
 reportlab
 pillow
 plotly
+fpdf2
