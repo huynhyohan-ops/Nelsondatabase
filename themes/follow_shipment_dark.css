@@ -1,0 +1,184 @@
+/* =========================================================
+   FOLLOW SHIPMENT PAGE - NAVY DASHBOARD THEME (v3)
+   Nâng cấp theo dashboard navy: KPI card rõ viền, bảng nền navy liền mạch
+   ========================================================= */
+
+/* === Base App Background === */
+html, body, [data-testid="stAppViewContainer"] {
+    background-color: #081A33; /* Nền tổng thể xanh navy đậm */
+    color: #E8F3FF;            /* Chữ xanh nhạt dễ đọc */
+    font-family: "Inter", sans-serif;
+}
+
+/* === Sidebar === */
+[data-testid="stSidebar"] {
+    background-color: #0C2B4A;
+    color: #E8F3FF;
+    border-right: 1px solid #1E5A99;
+}
+
+/* === Header === */
+[data-testid="stHeader"] {
+    background-color: #10365A;
+    color: #FFFFFF;
+    font-weight: 600;
+    border-bottom: 1px solid #1E5A99;
+}
+
+/* === Main Container === */
+.block-container {
+    background-color: #081A33;
+}
+
+/* =========================================================
+   KPI CARD SECTION
+   ========================================================= */
+.kpi-card {
+    background-color: #0E2748;   /* Nền đậm hơn nền tổng thể */
+    color: #E8F3FF;
+    border-radius: 12px;
+    border: 2px solid #1E5A99;   /* Viền sáng rõ */
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
+    padding: 20px;
+    text-align: center;
+    transition: transform 0.2s ease, box-shadow 0.3s ease;
+}
+.kpi-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 18px rgba(102, 204, 255, 0.35);
+}
+.kpi-card h5 {
+    color: #A9CCE3;
+    font-weight: 600;
+    margin-bottom: 8px;
+    font-size: 1.05rem;
+}
+.kpi-card h2 {
+    color: #66CCFF; /* Màu nổi bật cho giá trị KPI */
+    font-size: 2rem;
+    margin: 0;
+    font-weight: 700;
+}
+
+/* =========================================================
+   DELAY SECTION
+   ========================================================= */
+section[data-testid="stHorizontalBlock"] {
+    background-color: #0B2443;
+    border: 1px solid #1E5A99;
+    border-radius: 12px;
+    padding: 20px;
+}
+
+/* Subheader Title (Delay Selected Shipments) */
+h2, h3 {
+    color: #E8F3FF !important;
+    font-weight: 700;
+}
+
+/* Description text */
+label, p, span, div[data-testid="stMarkdownContainer"] {
+    color: #E8F3FF !important;
+}
+
+/* Date Input & Multiselect Input */
+input[type="date"], .stMultiSelect, select, input {
+    background-color: #10365A !important;
+    color: #E8F3FF !important;
+    border: 1px solid #1E5A99 !important;
+    border-radius: 8px;
+    padding: 8px;
+    font-weight: 500;
+}
+
+/* Buttons */
+.stButton>button {
+    background-color: #144E75;
+    color: #E8F3FF;
+    border-radius: 8px;
+    border: 1px solid #1E5A99;
+    font-weight: 600;
+    transition: all 0.2s ease-in-out;
+}
+.stButton>button:hover {
+    background-color: #1E5A99;
+    transform: translateY(-2px);
+}
+
+/* =========================================================
+   DATAFRAME / DATA EDITOR STYLING
+   ========================================================= */
+[data-testid="stDataFrame"], [data-testid="stDataEditor"] {
+    background-color: #0E2748 !important; /* Nền navy mềm hơn */
+    color: #E8F3FF !important;
+    border-radius: 8px;
+    border: 1px solid #1E5A99;
+}
+
+/* Table Header */
+[data-testid="stDataFrame"] th {
+    background-color: #144E75 !important;
+    color: #B9E0FF !important;
+    font-weight: 700;
+    border-bottom: 1px solid #1E5A99;
+}
+
+/* Table Body */
+[data-testid="stDataFrame"] td {
+    color: #E8F3FF !important;
+}
+
+/* Row Alternation */
+[data-testid="stDataFrame"] tr:nth-child(even) {
+    background-color: #0E2F53 !important;
+}
+[data-testid="stDataFrame"] tr:nth-child(odd) {
+    background-color: #10365A !important;
+}
+
+/* Row Hover */
+[data-testid="stDataFrame"] tr:hover {
+    background-color: #1E5A99 !important;
+    color: #FFFFFF !important;
+}
+
+/* =========================================================
+   RADIO BUTTONS
+   ========================================================= */
+.stRadio > div {
+    background-color: #10365A;
+    border-radius: 8px;
+    padding: 8px 10px;
+    border: 1px solid #1E5A99;
+}
+.stRadio label {
+    color: #E8F3FF !important;
+}
+
+/* =========================================================
+   PROGRESS BARS
+   ========================================================= */
+[data-testid="stProgressBar"] > div > div {
+    background-color: #66CCFF !important;
+}
+
+/* =========================================================
+   DIVIDERS / SCROLLBARS
+   ========================================================= */
+hr {
+    border: 0;
+    height: 1px;
+    background: linear-gradient(to right, #1E5A99, #66CCFF, #1E5A99);
+    margin: 20px 0;
+}
+
+::-webkit-scrollbar {
+    width: 8px;
+}
+::-webkit-scrollbar-thumb {
+    background-color: #1E5A99;
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background-color: #66CCFF;
+}
