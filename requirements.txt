@@ -6,3 +6,4 @@ reportlab
 pillow
 plotly
 fpdf2
+python-docx
