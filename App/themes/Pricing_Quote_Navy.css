@@ -1,0 +1,37 @@
+.main-card {
+    background: linear-gradient(135deg, #0B1F40 0%, #081A33 100%);
+    border: 2px solid #1E5A99;
+    border-radius: 24px;
+    padding: 32px;
+    box-shadow: 0 20px 60px rgba(0, 20, 50, 0.8);
+    margin: 20px 0;
+}
+
+.container-grid {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+    padding: 20px 0;
+}
+
+/* Tất cả nút – đồng bộ radius + glow */
+div[data-testid="stButton"] button {
+    border-radius: 20px !important;
+    height: 64px !important;
+    font-weight: 700 !important;
+    transition: all 0.4s ease !important;
+}
+
+div[data-testid="stButton"] button[kind="primary"] {
+    background: linear-gradient(135deg, #9CFFD4, #6BF1C8) !important;
+    color: #081A33 !important;
+    box-shadow: 0 12px 40px rgba(156, 255, 212, 0.5) !important;
+    transform: translateY(-6px) !important;
+}
+
+div[data-testid="stButton"] button[kind="secondary"] {
+    background: #2A4066 !important;
+    color: #B8D8F0 !important;
+    border: 2px solid #4A6FA5 !important;
+}
